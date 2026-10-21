@@ -330,6 +330,11 @@ requirements-models.txt       模型依赖（已实测可共存的版本组合 +
 
 ## 复现性：我们踩过并修掉的坑
 
+> **已验证**：把仓库 `git clone` 到干净目录，不重跑任何模型、只跑汇总脚本
+> （`report.py` / `stats_significance.py` / `analyze_shrinkage.py` / `analyze_seeds.py` / `figures.py`），
+> 生成的 `mit_fig1_trajectories.png`、`calce_fig4_sensitivity.png`、`fig5_shrinkage.png`
+> 与原图 **MD5 逐位一致**。也就是说提交的结果文件与图完全对应，中间没有手工改数。
+
 这部分是本项目最有价值的部分之一——**每一个坑都会让数字悄悄错掉，而且不报错**：
 
 | # | 坑 | 症状 | 修法 |

@@ -94,15 +94,28 @@ if has seed; then
 fi
 
 # ---- 汇总：结果表 + 显著性 + 机制 + 种子方差 + 图 ----
+# 注意：各步独立执行，不串成 && 链——diag_curvature 需要原始数据，
+# 而 report/figures 只读 03_实验结果，缺数据时不该被前一步拖死。
 if has report; then
-  echo "" | tee -a "$LOG"
-  echo ">>> report / stats / figures" | tee -a "$LOG"
-  ( cd "$ROOT/01_源代码" \
-    && "$PY_CORE" report.py \
-    && "$PY_CORE" stats_significance.py \
-    && "$PY_CORE" analyze_shrinkage.py \
-    && "$PY_CORE" analyze_seeds.py \
-    && "$PY_CORE" figures.py ) 2>&1 | tee -a "$LOG"
+  an() {
+    echo "" | tee -a "$LOG"
+    echo ">>> $*" | tee -a "$LOG"
+    ( cd "$ROOT/01_源代码" && "$PY_CORE" "$@" ) 2>&1 | tee -a "$LOG"
+  }
+  an report.py
+  an stats_significance.py
+  an analyze_shrinkage.py
+  an analyze_seeds.py
+  an diag_curvature.py --dataset mit --split test
+  an diag_curvature.py --dataset nasa
+  an diag_curvature.py --dataset calce
+  an plot_fewshot.py
+  an figures.py --prefix mit_ \
+     --runs "mit-zero-chronos-bolt,chronos,timesfm,naive_linear-ctx512;mit-zero-moirai;mit-zero-lag-llama;mit-zero-naive_last,naive_linear,exp_decay-refactor;mit-zero-arima"
+  an figures.py --prefix nasa_ \
+     --runs "nasa-zero-chronos-bolt,chronos,timesfm,naive_linear,naive_last,exp_decay;nasa-zero-moirai;nasa-zero-lag-llama"
+  an figures.py --prefix calce_ \
+     --runs "calce-zero-chronos-bolt,chronos,timesfm,naive_linear,naive_last,exp_decay;calce-zero-moirai;calce-zero-lag-llama"
 fi
 
 echo "" | tee -a "$LOG"

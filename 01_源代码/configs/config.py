@@ -80,7 +80,8 @@ for _ds, _kv in (DATASET_OVERRIDES or {}).items():
     )
 
 # 每个数据集"必须存在"的键，用于启动时给出可读报错而不是 KeyError
-_REQUIRED = {"mit": ["cells"], "nasa": ["mat_dir"], "calce": ["dir"]}
+# MIT 两张表都要：load_mit 用 cells 拿 cell 清单、用 cycles 拿逐循环容量
+_REQUIRED = {"mit": ["cells", "cycles"], "nasa": ["mat_dir"], "calce": ["dir"]}
 
 # 缺失时提示用户设置哪个环境变量
 _ENV_HINT = {
