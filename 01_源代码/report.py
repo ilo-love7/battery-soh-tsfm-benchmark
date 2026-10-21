@@ -31,6 +31,22 @@ ORDER = ["chronos-bolt", "chronos", "timesfm", "moirai", "lag-llama",
 KNOWN_TAGS = ("ctx512", "sens", "arimasmoke", "refactor")
 
 
+def run_ts(meta: dict) -> str:
+    """summary.json 里记录的时间戳，用于「同一键只保留最新一条」的比较。
+
+    刻意**不用文件 mtime**：git 不保留 mtime，干净克隆后每个文件的 mtime 都约等于
+    检出时刻，「保留最新」会退化成「取决于检出顺序」——本仓库确实因此翻过车：
+    NASA 的 chronos 行被后跑的 `_det_b`（确定性复查副本）顶掉，naive_linear 行被
+    gating 修复前的旧副本 `nasa-zero-naive_linear` 顶掉，导致别人 clone 下来重跑
+    汇总得到的主表和仓库里存的不一致（EOL 列出现 14.3/20.6 两个版本）。
+
+    `meta["timestamp"]` 是 `YYYY-MM-DDTHH:MM:SS` 的 ISO 字符串，字典序即时间序，
+    且随文件内容一起被 git 提交，因此跨机器、跨 clone 稳定。
+    """
+    ts = meta.get("timestamp") or ""
+    return ts if isinstance(ts, str) else ""
+
+
 def run_tag(dir_name: str) -> str:
     """从结果目录名推断实验标签：mit-zero-chronos-bolt-sens -> 'sens'。"""
     for t in KNOWN_TAGS:
@@ -41,14 +57,17 @@ def run_tag(dir_name: str) -> str:
 
 def collect(dataset_filter: str | None = None, skip_tags: tuple = ()) -> List[Dict]:
     """扫所有 summary.json。同一 (数据集,划分,实验,模型,起点) 只保留**最新**一条，
-    避免历史目录把表撑出重复行；不同实验标签（main/sens/ctx512）分开保留。"""
+    避免历史目录把表撑出重复行；不同实验标签（main/sens/ctx512）分开保留。
+
+    「最新」按 meta["timestamp"] 判（见 run_ts）；时间戳相同或缺失时保留
+    sorted(glob) 的先到者，因此输出只取决于目录名，与文件系统顺序无关。
+    """
     best: Dict[tuple, tuple] = {}
     for f in sorted(RESULTS_ROOT.glob("*/summary.json")):
         if any(t in f.parent.name for t in skip_tags):
             continue
         try:
             d = json.loads(f.read_text(encoding="utf-8"))
-            mtime = f.stat().st_mtime
         except Exception:
             continue
         meta = d.get("meta", {})
@@ -81,8 +100,11 @@ def collect(dataset_filter: str | None = None, skip_tags: tuple = ()) -> List[Di
                 "目录": f.parent.name,
             }
             k = (ds, split, exp, model, row["起点"])
-            if k not in best or mtime > best[k][0]:
-                best[k] = (mtime, row)
+            ts = run_ts(meta)
+            # 严格大于才替换：时间戳相同（或都缺省）时保留 sorted(glob) 的先到者，
+            # 保证输出只由目录名决定，与文件 mtime / clone 检出顺序无关。
+            if k not in best or ts > best[k][0]:
+                best[k] = (ts, row)
     return [v[1] for v in best.values()]
 
 
@@ -118,8 +140,11 @@ def to_markdown(df: pd.DataFrame) -> str:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dataset", default=None)
-    ap.add_argument("--skip", nargs="*", default=["arimasmoke", "refactor"],
-                    help="跳过目录名含这些子串的结果（冒烟/重构验证用）")
+    ap.add_argument("--skip", nargs="*",
+                    default=["arimasmoke", "refactor", "_det_"],
+                    help="跳过目录名含这些子串的结果"
+                         "（冒烟 / 重构验证 / 确定性复查副本，后者的指标与正式轮完全"
+                         "相同，留着只会把主表里的口径搅乱）")
     args = ap.parse_args()
 
     rows = collect(args.dataset, skip_tags=tuple(args.skip))
