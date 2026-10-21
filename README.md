@@ -198,14 +198,22 @@ Moirai / Lag-Llama 是采样解码）。本项目把分位数一起落盘，报 
   （0.665 与 1.87 之间是空的；Spearman ρ = 0.83）。
   要让名义 80% 的区间真的覆盖 80%，区间宽度至少要跟误差同量级；
   而绝大多数组合只有误差的 **4%–15%**，窄了 1–2 个数量级。
-- 所以"基础模型对未见衰减形态过度自信"这个说法**不够准确**，应改成：
-  **它们给出的区间比自身误差窄 10–20 倍**。凡是宽度补到位的组合（NASA 的 T5/TimesFM、
-  三库的 Lag-Llama）覆盖率立刻回到 76–94%——**不需要模型变准，只需要它别把区间报那么窄**。
-  这与校准头只需 1 个标量 `s=1.65` 就能拿到 −21% 的结论完全一致。
+- 但**别把这个规律当因果**。做干预实验（只缩放区间半宽、`q50` 逐位不动）后：
+  把 MIT 的 chronos-bolt 拉宽 **15 倍**（把 `MPIW/MAE` 从 0.068 补到约 1.0，与那些天然
+  76% 覆盖率的组合同量级）覆盖率只从 17.2% 升到 **43.0%**；要真到 80% 得拉 **113 倍**，
+  代价是 CRPS 从 4.12 涨到 8.88（+115%）。9/15 个组合都需要 38–2000 倍的宽度，
+  CRPS 中位涨 465%。**结论：横截面规律是相关、不是因果——那些模型不是"区间宽所以覆盖住"，
+  而是分布形状本来就更接近真实误差。形状错的分布等比放大只会又宽又错。**
+  反过来，"太宽"是可以用 1 个标量收回来的：Lag-Llama 在 MIT 收窄到 0.62× 后
+  覆盖率恰好 80%、CRPS 降 25%。详见
+  [`04_文档报告/区间宽度校准.md`](04_文档报告/区间宽度校准.md)。
 - **CRPS 与 MAE 高度同向（比值中位数 1.00–1.01）**：区间极窄时 CRPS 几乎退化成
   `|y − q50|`，在窄区间里提供不了比 MAE 更多的排序信息；只有宽度到位后
   （NASA 的 chronos 1.91、lag-llama 0.77–1.39）CRPS 才开始明显区别于 MAE。
+  更要紧的是：**CRPS 不能当校准目标**——它奖励"更窄"，11/15 个组合的最优 w 都退化到
+  `w→0`。只报 CRPS 会系统性掩盖"区间太窄"这个失败模式，所以本项目同时报 PICP 与 MPIW。
   完整表见 [`04_文档报告/执行记录-2026-10-20.md`](04_文档报告/执行记录-2026-10-20.md) §10.1；
+  宽度干预实验见 [`04_文档报告/区间宽度校准.md`](04_文档报告/区间宽度校准.md)；
   EOL 三量表见 [`04_文档报告/EOL重设计.md`](04_文档报告/EOL重设计.md)。
 
 > ⚠️ **CRPS ≥ |y − q50| 并不普遍成立**，所以"CRPS 小于同口径 MAE"不是 bug 判据。
@@ -488,6 +496,7 @@ bash scripts/run_matrix.sh report   # 纯汇总：report / 显著性 / 机制 / 
 ├── analyze_shrinkage.py     pred_ratio / 失配度 / 秩相关 → 衰减保留率.csv + fig5
 ├── analyze_eol2.py          EOL 重设计汇总 → 汇总_EOL重设计.csv + EOL重设计.md
 ├── analyze_calibration.py   零样本 / 2 参数 / 微调三方对比 → 校准头对比.md
+├── calibrate_width.py       区间宽度干预（绕中位数缩放半宽，零模型重跑）→ 区间宽度校准.md
 ├── analyze_seeds.py         多种子方差与排名翻转检查 → 种子方差.md
 ├── diag_curvature.py        knee_ratio（数据侧衰减加速比）
 ├── ablate_naive_linear.py   naive_linear 拟合窗口消融（⌊n/2⌋ vs 整段）
@@ -497,7 +506,8 @@ bash scripts/run_matrix.sh report   # 纯汇总：report / 显著性 / 机制 / 
 02_数据集链接/                三个数据集的来源、字段与获取方式（只写路径，不存数据）
 03_实验结果/                  每次运行的 per_cell / summary / predictions + 汇总与检验
   ├── prob/                  概率口径矩阵（CRPS/PICP/MPIW + EOL 重设计），二级目录不进主表
-  └── calib/                 校准头参数与网格曲面（calibration_head.json / grid_surface.csv）
+  ├── calib/                 校准头参数与网格曲面（calibration_head.json / grid_surface.csv）
+  └── width_calib/           区间宽度扫描（width_calibration.csv + 逐组合曲线 + 跨库迁移）
 04_文档报告/                  短文初稿、方案、执行记录、结果表、figures、_history（历史材料）
 scripts/                      setup_env.{sh,bat} + run_matrix.sh + run_prob.sh + run_cal.sh
 requirements-core.txt         核心依赖（基线所需）
@@ -509,13 +519,18 @@ requirements-models.txt       模型依赖（已实测可共存的版本组合 +
 ## 复现性：我们踩过并修掉的坑
 
 > **已验证（三次，均在干净克隆上）**：把仓库 `git clone` 到干净目录，不带 `data/`、
-> 不带 `local_paths.py`，只跑 `bash scripts/run_matrix.sh report`（13 步：
+> 不带 `local_paths.py`，只跑 `bash scripts/run_matrix.sh report`（16 步：
 > 缓存指纹回归测试 + `report.py` / `stats_significance.py` / `analyze_shrinkage.py` /
-> `analyze_seeds.py` / `diag_curvature.py` × 3 / `ablate_naive_linear.py` /
-> `plot_fewshot.py` / `figures.py` × 三库），**14 张图 MD5 与原图逐位一致**，
+> `analyze_seeds.py` / `analyze_eol2.py` / `analyze_calibration.py` / `calibrate_width.py` /
+> `diag_curvature.py` × 3 / `ablate_naive_linear.py` / `plot_fewshot.py` / `figures.py` × 三库），
+> **14 张图 MD5 与原图逐位一致**，
 > 7 个汇总产物内容一致（`.md` 仅剩 `core.autocrlf` 造成的行尾差异，`git diff` 为空），
 > 缓存指纹回归测试 16/16 通过。
 > 也就是说提交的结果文件与图完全对应，中间没有手工改数，且这一致性是跨机器成立的。
+>
+> 后加入的三步（`analyze_eol2` / `analyze_calibration` / `calibrate_width`）不产图，
+> 只读已提交的 `03_实验结果/prob`、`calib`，所以上面的图一致性与它们独立：
+> `calibrate_width.py` 本地连跑两轮，17 个产物 CSV 的 MD5 逐位相同。
 
 这部分是本项目最有价值的部分之一——**每一个坑都会让数字悄悄错掉，而且不报错**：
 

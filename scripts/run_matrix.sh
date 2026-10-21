@@ -162,6 +162,9 @@ if has report; then
   # 缺产物时脚本自己会给出"先跑 run_prob.sh / run_cal.sh"的提示，不拖死后续汇总。
   an analyze_eol2.py
   an analyze_calibration.py
+  # 区间宽度干预（§10.8）：绕中位数缩放半宽，零模型重跑，只读 prob/*.npz。
+  # 产物是 03_实验结果/width_calib/ 与 04_文档报告/区间宽度校准.md。
+  an calibrate_width.py
   an diag_curvature.py --dataset mit --split test
   an diag_curvature.py --dataset nasa
   an diag_curvature.py --dataset calce
