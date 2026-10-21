@@ -213,6 +213,56 @@ def probabilistic_metrics(pred_q: np.ndarray, truth: np.ndarray,
             "q_lo": lv[lo_i], "q_hi": lv[hi_i]}
 
 
+def median_deviation(preds: Sequence, qpreds: Sequence,
+                     levels: Sequence[float] = DEFAULT_LEVELS) -> Dict[str, float]:
+    """分位数链路的**中位数层**与点预测链路的最大偏差（口径一致性闸门）。
+
+    为什么必须有这道闸门
+    --------------------
+    概率指标与点指标要能放在同一张表里比，前提是两条链路跑的是**同一条轨迹**：
+    递归时把中位数拼回上下文，所以只要 q50 不等于点预测，后续每个 chunk 的
+    输入就不同，两条轨迹会逐步分叉。实测踩过：
+
+      · timesfm 2.5 的分位数张量最后一维是 `len(quantiles)+1 = 10` 列，
+        第 0 列是空槽，9 个分位数在第 1..9 列，第 5 列同时就是点预测。
+        适配器早先用 `np.linspace(0.1, 0.9, 10)` 硬铺层值，整体错位一格，
+        请求 0.5 时插值成了「真 q0.4 与真 q0.5 之间」⇒ 中位数被换掉。
+        CALCE 上两条轨迹最大分叉 **10.93 SOH%**，CRPS/PICP/MPIW 全都不再
+        对应模型的点预测，却照样写进了 per_cell_*.csv，没有任何告警。
+
+    这条不变式对四种基础模型都应当**精确成立**（偏差 0），因为：
+      · Chronos-Bolt / Chronos-T5：分位数与点预测来自同一次前向，中位数层直接就是点预测；
+      · TimesFM 2.5：官方 `return full_forecast[..., 5], full_forecast`，第 5 列兼作点预测；
+      · Moirai / Lag-Llama：点预测是 `fc.quantile(0.5)`，分位数是同一批样本的
+        `np.quantile(..., 0.5)`，同源同种子。
+    所以这里用**严格容差**（1e-9），不做"差不多就行"的放宽。
+
+    返回：{"max_abs": 最大绝对偏差, "n_checked": 参与比对的 cell 数,
+           "n_bad": 超过容差的 cell 数, "median_level": 实际使用的中位数层}
+    """
+    lv = [float(x) for x in levels]
+    mi = int(np.argmin([abs(x - 0.5) for x in lv]))
+    worst, n_checked, n_bad = 0.0, 0, 0
+    for p, q in zip(preds, qpreds):
+        if p is None or q is None:
+            continue
+        a = np.asarray(p, dtype=float).ravel()
+        b = np.asarray(q, dtype=float)
+        # 层数对不上说明调用方传错了 levels，比下去只会误导，直接跳过
+        if b.ndim != 2 or b.shape[0] != len(lv):
+            continue
+        n = min(a.size, b.shape[1])
+        if n == 0:
+            continue
+        d = float(np.max(np.abs(a[:n] - b[mi, :n])))
+        n_checked += 1
+        worst = max(worst, d)
+        if d > 1e-9:
+            n_bad += 1
+    return {"max_abs": worst, "n_checked": n_checked, "n_bad": n_bad,
+            "median_level": lv[mi]}
+
+
 def summarize(records: List[Dict[str, float]]) -> Dict[str, Dict[str, float]]:
     """对一组 cell 的结果做中位数/均值/IQR 汇总。"""
     if not records:

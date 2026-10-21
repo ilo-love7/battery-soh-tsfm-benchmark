@@ -121,14 +121,69 @@ class TimesFMForecaster(Forecaster):
         self._load()
         return self.api == "2.5"
 
+    def _quantile_layout(self) -> tuple[np.ndarray, np.ndarray, int]:
+        """模型分位数张量最后一维的语义：(层值, 对应列下标, 中位数列)。
+
+        ⚠️ 这里踩过一个大坑。timesfm 2.5 的 `forecast()` 返回
+        `(point, quantile)`，其中 `quantile` 的最后一维是
+        **`len(config.quantiles) + 1` = 10 列**，不是 9 列。官方
+        `timesfm_2p5_torch.py` 里写得很清楚：
+
+            self.q = len(self.config.quantiles) + 1   # 10
+            self.aridx = self.config.decode_index     # 5
+            ...
+            return full_forecast[..., 5], full_forecast   # 点预测就是第 5 列
+
+        也就是说 **第 0 列是一个空槽**——它既不参与 `fix_quantile_crossing`
+        （官方只动 1..4 和 6..9），也不被连续分位数头覆写（同上），
+        `force_flip_invariance` 的翻转函数还特意把它排除在外。
+        真正的 9 个分位数（0.1…0.9）落在第 **1..9** 列，第 5 列既是 0.5 分位
+        也逐位等于点预测。
+
+        早先版本写成 `qm = np.linspace(0.1, 0.9, q.shape[-1])`，把空槽也当成
+        0.1，整体错位一格：请求 0.5 时 `np.interp` 在「真 q0.4」和「真 q0.5」
+        之间插值，**中位数被换掉**。后果不只是概率指标偏差——分位数递归会把
+        这个假中位数拼回上下文，于是分位数链路跑出一条与点预测链路不同的轨迹
+        （CALCE 实测最大分叉 10.93 SOH%），CRPS 因此可以低于同口径 MAE
+        （12/14 支，最大 -3.08），直接违反 CRPS ≥ |y-q50| 的理论下界。
+        """
+        inner = getattr(self._model, "model", None)
+        cfg = getattr(inner, "config", None)
+        raw_lv = getattr(cfg, "quantiles", None)
+        if not raw_lv:
+            raise RuntimeError(
+                "无法从 timesfm 模型对象取到分位数层定义（config.quantiles）；"
+                "不同版本布局不同，不猜")
+        lv = np.asarray([float(x) for x in raw_lv], dtype=float)
+        q_cols = getattr(inner, "q", None)
+        mid_col = getattr(inner, "aridx", None)
+
+        if q_cols is not None and int(q_cols) == len(lv) + 1:
+            cols = np.arange(1, len(lv) + 1)      # 跳过第 0 列空槽
+        elif q_cols is not None and int(q_cols) == len(lv):
+            cols = np.arange(len(lv))             # 老布局：没有空槽
+        else:
+            raise RuntimeError(
+                f"timesfm 分位数列数 {q_cols} 与层数 {len(lv)} 的布局无法识别")
+
+        # 中位数列必须与 aridx 对齐，否则说明布局假设失效
+        mi_lv = int(np.argmin(np.abs(lv - 0.5)))
+        if mid_col is None:
+            mid_col = int(cols[mi_lv])
+        if abs(lv[mi_lv] - 0.5) < 1e-12 and int(mid_col) != int(cols[mi_lv]):
+            raise RuntimeError(
+                f"中位数列不一致：aridx={mid_col} vs 层映射={int(cols[mi_lv])}")
+        return lv, cols, int(mid_col)
+
     def predict_quantiles_batch(self, contexts: Sequence[np.ndarray], horizon: int,
                                 levels: Sequence[float] = (0.1, 0.5, 0.9)):
         """从 TimesFM 的连续分位数头取 (B, Q, H)。
 
-        2.5 的 forecast 返回 (point, quantile)，quantile 形状 (B, H, Q) 且
-        **分位数层是模型固定的**（不是我们传的 levels）。做法：先取模型自己的
-        分位数层，再用线性插值到请求的 levels。插值只在**层间**做，
-        不改变模型输出的任何数值。
+        2.5 的 forecast 返回 (point, quantile)，quantile 形状 (B, H, 10)，
+        **分位数层是模型固定的**（0.1…0.9，落在第 1..9 列）。做法：先按
+        `_quantile_layout()` 取出真正有效的列，再用线性插值到请求的 levels。
+        插值只在**层间**做，不改变模型输出的任何数值；请求层与模型层重合时
+        直接取原列，保证 q50 与点预测**逐位相同**（递归拼回上下文才不会分叉）。
         """
         self._load()
         if self.api != "2.5":
@@ -140,24 +195,26 @@ class TimesFMForecaster(Forecaster):
             raise NotImplementedError("timesfm 2.5 未返回分位数张量")
 
         q = np.asarray(quant, dtype=float)                  # (B, H, Q_model)
-        lv_req = [float(x) for x in levels]
-        # 模型固定的分位数层（timesfm 2.5 的连续头默认十分位数）
-        qm = getattr(self._model, "quantile_levels", None)
-        if qm is None:
-            qm = np.linspace(0.1, 0.9, q.shape[-1])
-        qm = np.asarray(qm, dtype=float)
         if q.ndim == 2:                                     # 单条输入被压成 2 维
             q = q[None, ...]
-        if q.shape[-1] != len(qm):
+        lv, cols, _ = self._quantile_layout()
+        if q.shape[-1] != int(cols[-1]) + 1:
             # 形状对不上时宁可明确失败，也不猜
-            raise RuntimeError(f"timesfm 分位数形状 {q.shape} 与层数 {len(qm)} 不符")
+            raise RuntimeError(
+                f"timesfm 分位数形状 {q.shape} 与层布局 {len(lv)}+空槽 不符")
 
-        # (B, H, Q_model) -> 逐 (B,H) 插值到请求层 -> (B, Q_req, H)
+        lv_req = [float(x) for x in levels]
+        sub = q[:, :, cols]                                 # (B, H, Q_model_valid)
+        # (B, H, Q) -> 逐 (B,H) 沿"层"轴插值到请求层 -> (B, Q_req, H)
         out = np.empty((q.shape[0], len(lv_req), q.shape[1]), dtype=float)
-        for b in range(q.shape[0]):
-            # q[b] 是 (H, Q_model)：对每个 horizon 步，沿"层"轴插值到请求层
-            out[b] = np.stack([np.interp(lv_req, qm, q[b, h, :])
-                               for h in range(q.shape[1])], axis=1)
+        for b in range(sub.shape[0]):
+            for h in range(sub.shape[1]):
+                out[b, :, h] = np.interp(lv_req, lv, sub[b, h, :])
+        # 请求层恰好等于模型层时直接取原列（避免插值的浮点尾差）
+        for j, want in enumerate(lv_req):
+            k = int(np.argmin(np.abs(lv - want)))
+            if abs(lv[k] - want) <= 1e-12:
+                out[:, j, :] = sub[:, :, k]
         return out
 
     def predict(self, context: np.ndarray, horizon: int) -> np.ndarray:

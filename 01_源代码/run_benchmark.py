@@ -56,8 +56,8 @@ from configs.config import (DATASETS, PROTOCOL, RESULTS_ROOT,  # noqa: E402
 from data.loaders import load_dataset                           # noqa: E402
 from data.protocol import clean_series, relative_split          # noqa: E402
 from evaluation.metrics import (DEFAULT_LEVELS, lifetime_metrics,  # noqa: E402
-                                probabilistic_metrics, summarize,
-                                trajectory_metrics)
+                                median_deviation, probabilistic_metrics,
+                                summarize, trajectory_metrics)
 
 # 写进 summary.json 的包版本（验收标准 #5：可追溯）
 _TRACKED_PKGS = ["torch", "transformers", "chronos-forecasting", "timesfm",
@@ -204,6 +204,10 @@ def run_model(model, tasks: List[Task], chunk: int, quiet: bool,
         idxs = groups[frac]
         contexts = [tasks[i].context for i in idxs]
         horizons = [len(tasks[i].truth) for i in idxs]
+        # 采样型模型的随机状态标记（确定性模型返回 None）。
+        # 分位数链路必须从**与点预测链路相同**的状态出发，否则两遍遍历的种子错开，
+        # 采到不同样本 ⇒ q50 ≠ 点预测 ⇒ 轨迹分叉（详见 adapters.base.rng_checkpoint）。
+        rng_ckpt = model.rng_checkpoint()
         try:
             out = rolling_forecast_batch(model, contexts, horizons, chunk)
             for j, i in enumerate(idxs):
@@ -224,6 +228,7 @@ def run_model(model, tasks: List[Task], chunk: int, quiet: bool,
         if not want_q:
             continue
         # 分位数链路：同样按 frac 分组；失败只影响概率指标，不影响点指标
+        model.rng_restore(rng_ckpt)
         try:
             qout = rolling_forecast_quantiles_batch(model, contexts, horizons,
                                                     chunk, list(levels))
@@ -345,6 +350,20 @@ def main():
             print("      !! 无有效结果")
             continue
 
+        # 口径一致性闸门：分位数链路的中位数层必须逐位等于点预测链路。
+        # 不等 ⇒ 两条轨迹已经分叉，CRPS/PICP/MPIW 说的不是这个模型的点预测
+        # （timesfm 的分位数层错位一格时实测分叉到 10.93 SOH%，见 metrics.median_deviation）。
+        dev = median_deviation(preds, qpreds, levels)
+        if dev["n_checked"]:
+            if dev["n_bad"]:
+                print(f"      ⚠️ 分位数中位数层与点预测不一致：{dev['n_bad']}/"
+                      f"{dev['n_checked']} 支，最大偏差 {dev['max_abs']:.4g} SOH%"
+                      f"\n         两条链路已分叉，概率指标与点指标不可比！"
+                      f"请检查该适配器的分位数层映射。")
+            else:
+                print(f"      口径一致：{dev['n_checked']} 支的 q{dev['median_level']:.2f} "
+                      f"与点预测逐位相同")
+
         tag = model.name
         df.to_csv(out_root / f"per_cell_{tag}.csv", index=False, encoding="utf-8-sig")
         # 预测与真值成对保存，供画图与逐曲线复核（key = cell@frac）
@@ -383,6 +402,8 @@ def main():
         model_meta[tag].update({"elapsed_sec": round(elapsed, 2),
                                 "n_ok": int(len(ok)), "n_err": int((~ok_mask).sum()),
                                 "chunk_used": min(args.chunk, model.max_horizon or args.chunk)})
+        if dev["n_checked"]:
+            model_meta[tag]["median_deviation"] = dev
         for frac in sorted(df["start_frac"].unique()):
             sub = ok[ok["start_frac"] == frac]
             if sub.empty:

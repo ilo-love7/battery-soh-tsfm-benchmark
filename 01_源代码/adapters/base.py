@@ -60,6 +60,37 @@ class Forecaster(ABC):
         """
         return rolling_forecast(self, context, horizon, chunk)
 
+    # -------------------------------------------------------- 随机状态
+    def rng_checkpoint(self):
+        """采样型模型：返回一个可恢复的随机状态标记；确定性模型返回 None。
+
+        为什么需要这一对钩子
+        --------------------
+        采样型适配器（Moirai / Lag-Llama）用**全局单调的调用计数器**推种子
+        （`_calls += 1; seed = base + _calls`），这样"重跑一致"且各 chunk 不复用
+        同一噪声。但点预测链路和分位数链路是**两遍独立遍历**：
+
+            第 1 遍 rolling_forecast_batch         → 用掉计数器 1..N
+            第 2 遍 rolling_forecast_quantiles_batch → 接着用 N+1..2N
+
+        同一个 chunk 在两遍里拿到的是**不同种子、不同样本**，于是
+        `q50 ≠ 点预测`，分位数递归沿着另一条轨迹跑下去。实测（未修复时）：
+
+            moirai      CALCE max|p−q50| = 0.75 SOH%，MIT 4.52，NASA 5.76
+            lag-llama   CALCE max|p−q50| = 62.5 SOH%，MIT 78.2，NASA 45.2
+
+        做法：`run_benchmark` 在每组的点预测链路**之前**取一次 checkpoint，
+        在分位数链路**之前**恢复它。这样两遍的每个 chunk 用同一种子、采到同一批
+        样本 ⇒ `q50` 与点预测逐位相同。点预测链路的调用全部发生在恢复之前，
+        **主表数字一位都不变**；恢复后分位数链路跑完，计数器恰好回到原值，
+        后续分组的点预测链路也不受影响。
+        """
+        return None
+
+    def rng_restore(self, ckpt) -> None:
+        """把随机状态恢复回 `rng_checkpoint()` 的返回值。确定性模型无需实现。"""
+        return None
+
     # ------------------------------------------------------------ 分位数
     def supports_quantiles(self) -> bool:
         """是否原生输出预测分布。基线一律 False（点估计没有区间可言）。"""
@@ -127,30 +158,31 @@ def _median_index(levels: Sequence[float]) -> int:
     return int(np.argmin([abs(x - 0.5) for x in lv]))
 
 
-def quantiles_from_samples(samples: np.ndarray, levels: Sequence[float],
-                           horizon: int) -> np.ndarray:
-    """从 gluonts `SampleForecast.samples` 的 (S, H) 张量算 (Q, horizon) 分位数。
+def quantiles_from_forecast(fc, levels: Sequence[float], horizon: int) -> np.ndarray:
+    """从 gluonts 的 `SampleForecast` 取 (Q, horizon) 分位数。
 
-    ⚠️ 时间轴是**最后一维**。采样型适配器（Moirai / Lag-Llama）的 predictor 按
-    固定的 `max_horizon` 出 64 步，rolling 到最后一个不满 chunk 的小块时
-    （horizon=21 之类）必须由这一层切。
+    ⚠️ 必须用 `fc.quantile()`，**不能**用 `np.quantile(fc.samples, ...)`。
+    两者对"分位数"的定义不同：
 
-    ⚠️ 这里曾经写成 `samples[:horizon]`——切的是**样本轴**不是时间轴：
-      - horizon < num_samples 时不报错，但只用前 horizon 条样本算分位数，
-        中位数与 `predict_batch` 里 `fc.quantile(0.5)`（用全部样本）不一致，
-        于是分位数递归拼回上下文的中位数 ≠ 点预测链路，CRPS/PICP 与 MAE
-        说的不是同一个模型；
-      - horizon >= num_samples 时直接广播失败
-        （实测 `could not broadcast input array from shape (3,64) into shape (3,21)`）。
-    两个适配器各写一遍就会各错一遍，所以抽成共享函数并配单测。
+        gluonts  SampleForecast.quantile:  sample_idx = round((S−1)·q)
+                                          return self._sorted_samples[sample_idx]
+                                          → 取**最近样本**，不做插值
+        numpy   np.quantile(..., 0.5):    线性插值，取第 49/50 个次序统计量的均值
+
+    同一批样本下，两者差**半个样本间距**（实测 0.0157 SOH%，S=100）。
+    点预测链路走的是 `fc.quantile(0.5)`（见 `predict_batch`），所以分位数链路
+    一旦改用 `np.quantile`，`q50` 就与点预测对不上——分位数递归会沿另一条轨迹跑，
+    moirai 首 chunk 差 0.062、lag-llama 差 4.38 SOH%，全段放大到 32。
+
+    ⚠️ 时间轴是**最后一维**，且 horizon 切片要在 `fc.quantile` 之后做——
+    与 `predict_batch` 里 `fc.quantile(0.5)[:horizon]` 完全同构。
+    历史坑：曾写成 `samples[:horizon]`（切的是**样本轴**），
+    horizon < num_samples 时不报错但只用了前 horizon 条样本；
+    horizon >= num_samples 时直接广播失败。
     """
-    s = np.asarray(samples, dtype=float)
-    if s.ndim != 2:
-        raise ValueError(f"样本张量应为 (S, H) 二维，实际 {s.shape}")
-    if s.shape[1] < horizon:
-        raise ValueError(f"样本时间轴只有 {s.shape[1]} 步，不足 horizon={horizon}")
-    s = s[:, :horizon]                       # 切时间轴，**保留全部样本**
-    return np.quantile(s, [float(x) for x in levels], axis=0)
+    lv = [float(x) for x in levels]
+    rows = [np.asarray(fc.quantile(l), dtype=float)[:horizon] for l in lv]
+    return np.vstack(rows)
 
 
 def repair_quantiles(model: Forecaster, q: np.ndarray,

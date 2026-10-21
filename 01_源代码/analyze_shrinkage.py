@@ -23,7 +23,6 @@ diag_curvature.py 并更新它，否则机制图整体失真。
 """
 from __future__ import annotations
 
-import json
 import sys
 from pathlib import Path
 

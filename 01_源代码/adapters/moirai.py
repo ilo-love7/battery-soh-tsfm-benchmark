@@ -16,7 +16,7 @@ from typing import List, Sequence
 import numpy as np
 
 from adapters.base import (Forecaster, NotInstalledError,  # noqa: E402
-                           quantiles_from_samples)
+                           quantiles_from_forecast)
 
 
 class MoiraiForecaster(Forecaster):
@@ -72,6 +72,16 @@ class MoiraiForecaster(Forecaster):
         torch.manual_seed(s)
         np.random.seed(s)
 
+    # 采样计数器就是全部的随机状态：种子是它的纯函数。
+    # run_benchmark 靠这一对钩子让分位数链路与点预测链路从同一状态出发
+    # （否则两遍遍历的种子错开，q50 ≠ 点预测，轨迹分叉；详见 base.rng_checkpoint）。
+    def rng_checkpoint(self):
+        return int(self._calls)
+
+    def rng_restore(self, ckpt) -> None:
+        if ckpt is not None:
+            self._calls = int(ckpt)
+
     def predict_batch(self, contexts: Sequence[np.ndarray], horizon: int) -> List[np.ndarray]:
         self._load()
         from gluonts.dataset.common import ListDataset
@@ -116,9 +126,10 @@ class MoiraiForecaster(Forecaster):
         lv = [float(x) for x in levels]
         out = np.empty((len(fcs), len(lv), horizon), dtype=float)
         for b, fc in enumerate(fcs):
-            # 切时间轴、保留全部样本：与 predict_batch 的 fc.quantile(0.5) 同源
-            # （细节与踩坑记录见 adapters.base.quantiles_from_samples）
-            out[b] = quantiles_from_samples(fc.samples, lv, horizon)
+            # 用**同一个访问器** fc.quantile()：与 predict_batch 逐位同源。
+            # 不能用 np.quantile(samples)：取法不同（最近样本 vs 线性插值），
+            # 同一批样本下 q50 就差半个样本间距（详见 adapters.base.quantiles_from_forecast）
+            out[b] = quantiles_from_forecast(fc, lv, horizon)
         return out
 
     def predict(self, context: np.ndarray, horizon: int) -> np.ndarray:

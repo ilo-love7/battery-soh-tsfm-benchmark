@@ -350,60 +350,296 @@ def test_repair_quantiles_pins_median() -> None:
     check("5 层：常数列修复后全等于 80", np.allclose(out5[:, 1], 80.0))
 
 
-# ------------------------------------------------------- 13. 采样型分位数切轴
-def test_quantiles_from_samples_slices_time_axis() -> None:
-    """`samples[:, :horizon]`，不是 `samples[:horizon]`。
+# ------------------------------------- 13. 采样型分位数的取法必须与点预测一致
+def test_quantiles_from_forecast_matches_point() -> None:
+    """`fc.quantile()`，不是 `np.quantile(fc.samples, ...)`。
 
-    Moirai / Lag-Llama 真实踩过的坑：predictor 固定出 64 步，
-    rolling 到最后一个小 chunk（horizon=21）时
-      - 写成 samples[:horizon] 切的是**样本轴** → 广播失败
-        （实测 could not broadcast (3,64) into (3,21)）；
-      - 且 horizon < num_samples 时即使不崩，也只用了前 horizon 条样本，
-        中位数与 predict_batch 的 fc.quantile(0.5)（全部样本）不一致。
+    Moirai / Lag-Llama 真实踩过的两个坑，都在这一层：
+
+    (a) **切错轴**：写成 `samples[:horizon]` 切的是**样本轴**。
+        horizon < num_samples 时不报错但只用了前 horizon 条样本；
+        horizon >= num_samples 时直接广播失败
+        （实测 `could not broadcast (3,64) into (3,21)`）。
+
+    (b) **取法不同**（更隐蔽，直到加了口径闸门才暴露）：gluonts 的
+        `SampleForecast.quantile` 是
+            `sample_idx = round((S−1)·q); return _sorted_samples[sample_idx]`
+        即**取最近样本、不插值**；而 `np.quantile(..., 0.5)` 是线性插值。
+        同一批样本下两者差**半个样本间距**（实测 0.0157 SOH%）。
+        点预测链路走 `fc.quantile(0.5)`，分位数链路若改用 `np.quantile`，
+        `q50` 就对不上 ⇒ 递归沿另一条轨迹跑（moirai 首 chunk 0.062、
+        lag-llama 4.38 SOH%，全段放大到 32）。
+
+    这里用一个**模仿 gluonts 语义**的假 forecast 把两条不变量同时锁死。
     """
-    print("\n[13] 采样张量切轴：时间轴是最后一维")
-    from adapters.base import quantiles_from_samples
+    print("\n[13] 采样型分位数：取法与点预测一致 + 时间轴切片正确")
+    from adapters.base import quantiles_from_forecast
+
+    class FakeSampleForecast:
+        """按 gluonts 的真实语义实现 quantile：取最近样本，不做插值。"""
+
+        def __init__(self, samples: np.ndarray) -> None:
+            self.samples = np.asarray(samples, dtype=float)
+            self.num_samples = self.samples.shape[0]
+            self._sorted = np.sort(self.samples, axis=0)
+
+        def quantile(self, q: float) -> np.ndarray:
+            idx = int(np.round((self.num_samples - 1) * float(q)))
+            return self._sorted[idx, :]
 
     rng = np.random.default_rng(0)
     samples = rng.normal(90.0, 1.0, size=(100, 64))     # (S=100, H=64)
+    fc = FakeSampleForecast(samples)
     lv = [0.1, 0.5, 0.9]
 
-    full = quantiles_from_samples(samples, lv, 64)
+    full = quantiles_from_forecast(fc, lv, 64)
     check("满 chunk 形状 (Q, H)", full.shape == (3, 64), str(full.shape))
-    check("满 chunk 中位数 == 该列全样本分位",
-          close(float(full[1, 5]), float(np.quantile(samples[:, 5], 0.5))))
-    # 关键不变量：中位数必须用**全部**样本，才与 fc.quantile(0.5) 同源。
-    # "前 64 条"与"全部 100 条"在同一列上必然不同（随机序列），可作判据。
-    check("中位数用全部样本（而非前 horizon 条）",
-          not close(float(full[1, 5]), float(np.quantile(samples[:64, 5], 0.5))),
-          f"{full[1, 5]} vs {np.quantile(samples[:64, 5], 0.5)}")
+    # 核心不变式：q50 必须**逐位等于**点预测链路用的 fc.quantile(0.5)
+    check("q50 逐位等于 fc.quantile(0.5)（点预测链路）",
+          bool(np.array_equal(full[1], fc.quantile(0.5))))
+    # 并证明它**不等于** np.quantile —— 这正是曾经的分叉来源
+    check("q50 不等于 np.quantile(0.5)（取法不同，证明判据有效）",
+          not close(float(full[1, 5]), float(np.quantile(samples[:, 5], 0.5))),
+          f"{full[1, 5]} vs {np.quantile(samples[:, 5], 0.5)}")
 
-    part = quantiles_from_samples(samples, lv, 21)
+    # 小 chunk：切片发生在 fc.quantile 之后，与 predict_batch 同构
+    part = quantiles_from_forecast(fc, lv, 21)
     check("小 chunk 形状 (Q, 21)", part.shape == (3, 21), str(part.shape))
-    check("小 chunk 中位数 == 同列全样本分位",
-          close(float(part[1, 7]), float(np.quantile(samples[:, 7], 0.5))))
+    check("小 chunk q50 逐位等于 fc.quantile(0.5)[:21]",
+          bool(np.array_equal(part[1], fc.quantile(0.5)[:21])))
     check("小 chunk 相邻列不同（确实切了时间轴）",
           not close(float(part[1, 3]), float(part[1, 4])))
-
-    # 旧写法的失败模式：horizon >= num_samples 时 samples[:horizon] 形状不变但语义错
-    few = rng.normal(90.0, 1.0, size=(10, 64))
-    q10 = quantiles_from_samples(few, lv, 10)
+    # 旧写法 samples[:horizon] 会切样本轴：前 10 条样本算出的中位数必然不同
+    few = FakeSampleForecast(rng.normal(90.0, 1.0, size=(10, 64)))
+    q10 = quantiles_from_forecast(few, lv, 10)
     check("样本数 < horizon 也正确（旧写法会广播失败）",
           q10.shape == (3, 10), str(q10.shape))
-    check("样本少时中位数仍用全部 10 条",
-          close(float(q10[1, 3]), float(np.quantile(few[:, 3], 0.5))))
+    check("样本少时 q50 仍逐位等于 fc.quantile(0.5)[:10]",
+          bool(np.array_equal(q10[1], few.quantile(0.5)[:10])))
 
-    # 时间轴不足 / 维度不对必须明确报错，不能静默返回短序列
+    # 层值顺序不能被打乱：q10 <= q50 <= q90（本构造下样本有序统计量保证）
+    check("三层单调", bool(np.all(full[0] <= full[1]) and np.all(full[1] <= full[2])))
+
+
+# ------------------------------------------- 14. CRPS 在 y=q50 处取极小
+def test_crps_minimized_at_median() -> None:
+    """固定预测分布，CRPS 作为观测 y 的函数**在中位数处达到全局极小**。
+
+    ⚠️ 这条要替代一个曾经写错的直觉：CRPS ≥ |y − q50| 并**不**普遍成立。
+    反例（本组第二个断言就是它）：分位数函数近似 U[0,10]（中位数 5），取 y = −100，
+        点质量分布 CRPS = |−100 − 5| = 105，
+        而该分布的 CRPS ≈ 103.8 < 105。
+    也就是说"CRPS 小于同口径 MAE"本身不是 bug——真正的不变式是
+    d/dy CRPS = 2F(y) − 1，零点在 y = 中位数，且二阶导 2f(y) > 0。
+
+    ⚠️ 注意"极小"是**一段平台**而不是一个点：离散分位函数下，
+    只要 F(y) = 0.5（即 y 落在 [q50, 下一个断点) 区间内），导数就恒为 0。
+    所以只能断言"中位数处达到最小值"，不能断言 argmin 唯一。
+
+    判断概率指标是否可信，不能拿它和 MAE 比大小，只能查**两条链路是否同一条
+    轨迹**（见第 15 组）。这一组锁住的是 CRPS 定义本身没被写坏。
+    """
+    print("\n[14] 固定分布下 CRPS 在（诱导分布的）中位数处取全局极小")
+    # 9 个等距分位点，q50 = 5
+    lv = [0.1 * i for i in range(1, 10)]
+    q = np.array([float(i) for i in range(1, 10)])
+    q50 = float(q[4])
+
+    # 离散分位函数诱导的分布。注意本实现的约定是**段内取右端点分位**：
+    # 段 [α_{i−1}, α_i] 的质量归到 q_i，因此 F 的跳点从 q_0 挪到 q_1 一侧。
+    alpha = [0.0] + lv + [1.0]
+    qs = [q[0]] + list(q) + [q[-1]]
+    cdf = np.cumsum(np.diff(alpha))                          # 长度 = len(alpha)−1
+    m_star = float(qs[1 + int(np.argmax(cdf >= 0.5 - 1e-12))])  # 诱导分布的中位数
+
+    grid = np.linspace(-10.0, 20.0, 601)
+    vals = np.array([crps_from_quantiles(float(y), q, lv) for y in grid])
+    # 断点必须进网格，否则最小值会被"跳过"
+    at_q = np.array([crps_from_quantiles(float(v), q, lv) for v in q])
+    gmin = min(float(vals.min()), float(at_q.min()))
+
+    check(f"诱导中位数 m*={m_star:g} 与 q50={q50:g} 相差不超过 1 个分位步长",
+          abs(m_star - q50) <= 1.0 + 1e-9, f"{m_star} vs {q50}")
+    check(f"CRPS 在 m* 处取到全局最小（{crps_from_quantiles(m_star, q, lv):.6f}）",
+          abs(crps_from_quantiles(m_star, q, lv) - gmin) < 1e-12,
+          f"{crps_from_quantiles(m_star, q, lv):.6f} vs min={gmin:.6f}")
+    check("CRPS 处处非负", bool(np.all(vals >= -1e-12)), f"min={vals.min():.3e}")
+    # 远离中位数必须严格变大（排除"定义写反/符号错"这类故障）
+    at_med = crps_from_quantiles(m_star, q, lv)
+    check("y=m*−10 处严格大于 m* 处",
+          crps_from_quantiles(m_star - 10.0, q, lv) > at_med + 1e-6)
+    check("y=m*+10 处严格大于 m* 处",
+          crps_from_quantiles(m_star + 10.0, q, lv) > at_med + 1e-6)
+
+    # 关键反例：支撑外 y 的 CRPS 可以小于 |y − q50|，说明该下界不成立
+    y_far = -100.0
+    c_far = crps_from_quantiles(y_far, q, lv)
+    check("支撑外 y：CRPS < |y−q50|（下界不成立的反例）",
+          c_far < abs(y_far - q50) - 1e-6,
+          f"CRPS={c_far:.4f} vs |y−q50|={abs(y_far - q50):.4f}")
+
+    # 3 层退化情形：最小值是一段平台，[q50, q90] 内取值全等
+    q3, lv3 = np.array([86.0, 90.0, 94.0]), [0.1, 0.5, 0.9]
+    plate = [crps_from_quantiles(y, q3, lv3) for y in (90.0, 91.5, 93.9)]
+    check("3 层时 [q50,q90] 内 CRPS 恒定（极小是平台不是点）",
+          max(plate) - min(plate) < 1e-12, str(plate))
+    check("3 层时平台值等于最小值",
+          min(plate) <= crps_from_quantiles(85.0, q3, lv3) - 1e-9)
+
+
+# ------------------------------------- 15. 中位数层与点预测的口径一致性闸门
+def test_median_deviation_gate() -> None:
+    """`median_deviation()` 必须能抓住"分位数链路与点预测链路分叉"。
+
+    timesfm 2.5 的真实事故：分位数张量是 `len(quantiles)+1 = 10` 列，
+    第 0 列是空槽、9 个分位数在第 1..9 列、第 5 列兼作点预测。
+    适配器用 `linspace(0.1, 0.9, 10)` 硬铺层值，整体错位一格，
+    CALCE 上两条轨迹最大分叉 10.93 SOH%——但当时没有任何告警，
+    错的 CRPS/PICP/MPIW 照样写进了 per_cell_*.csv。
+    """
+    print("\n[15] 中位数层与点预测一致性闸门")
+    from evaluation.metrics import median_deviation
+
+    lv = [0.1, 0.5, 0.9]
+    p1 = np.array([90.0, 89.5, 89.0])
+    q1 = np.vstack([p1 - 1.0, p1, p1 + 1.0])          # q50 逐位等于点预测
+    d = median_deviation([p1], [q1], lv)
+    check("一致时 max_abs == 0", d["max_abs"] == 0.0, str(d))
+    check("一致时 n_bad == 0", d["n_bad"] == 0, str(d))
+    check("统计到的 cell 数 = 1", d["n_checked"] == 1, str(d))
+    check("median_level == 0.5", d["median_level"] == 0.5, str(d))
+
+    q2 = q1.copy()
+    q2[1, 2] += 0.01                                   # 只动一个点
+    d2 = median_deviation([p1], [q2], lv)
+    check("差 0.01 也判为不一致（严格容差 1e-9）", d2["n_bad"] == 1, str(d2))
+    check("偏差量级正确", close(d2["max_abs"], 0.01, 1e-9), str(d2["max_abs"]))
+
+    # 只比 horizon 重叠部分；None 与缺层都要跳过而不是崩
+    d3 = median_deviation([None, p1], [q1, None], lv)
+    check("None 条目跳过", d3["n_checked"] == 0, str(d3))
+    d4 = median_deviation([p1], [np.vstack([p1 - 1.0, p1])], lv)
+    check("分位数层数不足时跳过（不崩）", d4["n_checked"] == 0, str(d4))
+    d5 = median_deviation([p1[:2]], [q1[:, :3]], lv)
+    check("horizon 不等时按重叠长度比对", d5["max_abs"] == 0.0, str(d5))
+
+    # 层值里没有精确 0.5 时，取最接近的层，并如实回报
+    d6 = median_deviation([p1], [np.vstack([p1 - 1.0, p1, p1 + 1.0])],
+                          [0.1, 0.4, 0.9])
+    check("无 0.5 层时退回最接近层 (0.4)", d6["median_level"] == 0.4, str(d6))
+
+
+# ------------------- 16. 采样模型的随机状态：两条链路必须从同一状态出发
+def test_sampling_rng_checkpoint_restore() -> None:
+    """计数器推种子的采样模型，两条链路必须**从同一随机状态出发**。
+
+    真实事故（moirai / lag-llama）：适配器用全局单调计数器推种子
+        `_calls += 1; seed = base + _calls`
+    而点预测链路与分位数链路是**两遍独立遍历**：
+        第 1 遍用掉计数器 1..N，第 2 遍接着用 N+1..2N。
+    同一个 chunk 在两遍里拿到不同种子、不同样本 ⇒ `q50 ≠ 点预测`。
+    实测未修复时 max|p−q50|：moirai CALCE 0.75 / MIT 4.52 / NASA 5.76 SOH%，
+    lag-llama CALCE 62.5 / MIT 78.2 / NASA 45.2 SOH%。
+
+    修法是 `rng_checkpoint()` / `rng_restore()`：分位数链路前把计数器复位。
+    本组用假模型锁住这个机制，并确认**点预测链路不受影响**。
+    """
+    print("\n[16] 采样模型的随机状态 checkpoint / restore")
+    from adapters.base import Forecaster, rolling_forecast, rolling_forecast_quantiles
+
+    class FakeSampler(Forecaster):
+        """用计数器推种子的采样模型，故意复现真实适配器的结构。"""
+        supports_batch = True
+        max_context = 64
+        max_horizon = 16
+
+        def __init__(self) -> None:
+            self.name = "fake-sampler"
+            self.seed = 1234
+            self._calls = 0
+            self._rng = np.random.default_rng(0)
+
+        def _seed_next(self) -> None:
+            self._calls += 1
+            self._rng = np.random.default_rng(int(self.seed) + self._calls)
+
+        def rng_checkpoint(self):
+            return int(self._calls)
+
+        def rng_restore(self, ckpt) -> None:
+            if ckpt is not None:
+                self._calls = int(ckpt)
+
+        def _draw(self, contexts, horizon):
+            self._seed_next()
+            # 采样：中位数 = 上下文的线性外推 + 一个随种子变化的扰动
+            out = []
+            for c in contexts:
+                base = np.linspace(c[-1], c[-1] - 0.5, horizon)
+                out.append(base + self._rng.normal(0, 0.3, size=horizon))
+            return np.asarray(out, dtype=float)
+
+        def predict(self, context, horizon):
+            return self.predict_batch([context], horizon)[0]
+
+        def predict_batch(self, contexts, horizon):
+            return list(self._draw(contexts, horizon))
+
+        def predict_quantiles_batch(self, contexts, horizon, levels=(0.1, 0.5, 0.9)):
+            m = self._draw(contexts, horizon)          # (B, H)
+            # 约定返回 (B, Q, H)
+            return np.stack([m - 1.0, m, m + 1.0], axis=1)
+
+    ctx = 90.0 - 0.02 * np.arange(64)
+    H, CH = 48, 16
+
+    # (a) 不恢复状态：两遍遍历种子错开 ⇒ 分叉
+    m_bad = FakeSampler()
+    p_bad = rolling_forecast(m_bad, ctx, H, CH)
+    q_bad = rolling_forecast_quantiles(m_bad, ctx, H, CH, (0.1, 0.5, 0.9))
+    dev_bad = float(np.abs(p_bad - q_bad[1]).max())
+    check("不恢复随机状态时两条链路分叉（复现事故）", dev_bad > 1e-6, f"{dev_bad:.3e}")
+
+    # (b) 恢复状态：两条链路逐位相同
+    m_ok = FakeSampler()
+    ckpt = m_ok.rng_checkpoint()
+    p_ok = rolling_forecast(m_ok, ctx, H, CH)
+    m_ok.rng_restore(ckpt)
+    q_ok = rolling_forecast_quantiles(m_ok, ctx, H, CH, (0.1, 0.5, 0.9))
+    dev_ok = float(np.abs(p_ok - q_ok[1]).max())
+    check("恢复随机状态后 q50 与点预测逐位相同", dev_ok == 0.0, f"{dev_ok:.3e}")
+
+    # (c) 关键：恢复不改变点预测链路的结果
+    check("恢复状态不影响点预测链路（主表数字不变）",
+          bool(np.array_equal(p_ok, p_bad)))
+
+    # (d) 分位数链路跑完后计数器回到原值，后续分组不受影响
+    m_after = FakeSampler()
+    c1 = m_after.rng_checkpoint()
+    rolling_forecast(m_after, ctx, H, CH)
+    end_point = m_after.rng_checkpoint()
+    m_after.rng_restore(c1)
+    rolling_forecast_quantiles(m_after, ctx, H, CH, (0.1, 0.5, 0.9))
+    check("分位数链路结束后计数器与原序列一致", m_after.rng_checkpoint() == end_point,
+          f"{m_after.rng_checkpoint()} vs {end_point}")
+
+    # (e) 确定性模型（默认实现）不受影响
+    class Det(Forecaster):
+        name = "det"
+        def predict(self, context, horizon):
+            return np.full(horizon, float(context[-1]))
+
+    d = Det()
+    check("确定性模型 rng_checkpoint 返回 None", d.rng_checkpoint() is None)
+    d.rng_restore(None)   # 不应抛错
+    check("确定性模型 rng_restore(None) 安全", True)
+    dp = rolling_forecast(d, ctx, H, CH)
+    check("确定性模型点预测正常", dp.shape == (H,), str(dp.shape))
     try:
-        quantiles_from_samples(samples, lv, 100)
-        check("时间轴不足应报错", False, "没有抛错")
-    except ValueError:
-        check("时间轴不足应报错", True)
-    try:
-        quantiles_from_samples(np.ones(5), lv, 3)
-        check("一维输入应报错", False, "没有抛错")
-    except ValueError:
-        check("一维输入应报错", True)
+        rolling_forecast_quantiles(d, ctx, H, CH, (0.1, 0.5, 0.9))
+        check("确定性模型不支持下分位数时应抛错", False, "没有抛错")
+    except NotImplementedError:
+        check("确定性模型不支持下分位数时应抛错", True)
 
 
 if __name__ == "__main__":
@@ -422,7 +658,10 @@ if __name__ == "__main__":
     test_unsupported_model_raises()
     test_baselines_report_no_quantiles()
     test_repair_quantiles_pins_median()
-    test_quantiles_from_samples_slices_time_axis()
+    test_quantiles_from_forecast_matches_point()
+    test_crps_minimized_at_median()
+    test_median_deviation_gate()
+    test_sampling_rng_checkpoint_restore()
     print("\n" + "=" * 64)
     print(f"通过 {len(_PASS)} 项，失败 {len(_FAIL)} 项")
     if _FAIL:
