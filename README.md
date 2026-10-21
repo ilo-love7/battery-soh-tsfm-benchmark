@@ -334,10 +334,11 @@ requirements-models.txt       模型依赖（已实测可共存的版本组合 +
 
 ## 复现性：我们踩过并修掉的坑
 
-> **已验证**：把仓库 `git clone` 到干净目录，不重跑任何模型、只跑汇总脚本
-> （`report.py` / `stats_significance.py` / `analyze_shrinkage.py` / `analyze_seeds.py` / `figures.py`），
-> 生成的 `mit_fig1_trajectories.png`、`calce_fig4_sensitivity.png`、`fig5_shrinkage.png`
-> 与原图 **MD5 逐位一致**。也就是说提交的结果文件与图完全对应，中间没有手工改数。
+> **已验证（两轮，均在干净克隆上）**：把仓库 `git clone` 到干净目录，不重跑任何模型、只跑汇总脚本
+> （`report.py` / `stats_significance.py` / `analyze_shrinkage.py` / `analyze_seeds.py` / `plot_fewshot.py` /
+> `figures.py` × 三库），**14 张图 MD5 与原图逐位一致**，7 个汇总产物
+> （`汇总表.csv`、`显著性检验.csv/.md`、`种子方差.csv/.md`、`汇总_衰减保留率.csv`、`结果表.md`）内容一致。
+> 也就是说提交的结果文件与图完全对应，中间没有手工改数，且这一致性是跨机器成立的。
 
 这部分是本项目最有价值的部分之一——**每一个坑都会让数字悄悄错掉，而且不报错**：
 
@@ -352,6 +353,7 @@ requirements-models.txt       模型依赖（已实测可共存的版本组合 +
 | 7 | 上下文长度**不公平** | Bolt 用 2048、T5 用 512，差距里混进了上下文长度 | 主表统一 `--max-context 512`，另保留原生长度做对照 |
 | 8 | Windows 上 `pandas` 先于 `torch` 导入 | `OSError [WinError 1114] c10.dll 初始化例程失败` | `run_benchmark.py` 顶部按需预导入 torch |
 | 9 | 依赖缺失时**静默返回随机数** | 原版脚本"看起来跑成功了"，其实全是噪声 | 依赖缺失一律抛 `NotInstalledError`，禁止兜底 |
+| 10 | 汇总表用**文件 mtime** 判新旧 | 别人 clone 下来跑 `report.py`，`汇总表.csv` 和仓库里存的对不上：NASA chronos 的「目录/耗时」变成 `_det_b`，naive_linear 的 EOL 列从 20.6/3 变成 14.3/4（旧副本顶掉）。git 不保留 mtime，"保留最新"退化成"取决于检出顺序" | 改判 `summary.json` 里的 `meta["timestamp"]`（随内容一起提交，跨机器稳定），时间相同则保留 `sorted(glob)` 先到者 |
 
 细节见 [`04_文档报告/执行记录-2026-10-20.md`](04_文档报告/执行记录-2026-10-20.md)。
 
