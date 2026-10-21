@@ -202,6 +202,9 @@ def to_markdown(all_rows: List[dict]) -> str:
             lines.append("")
     lines.append("> 读法：两个模型的 95% CI 明显重叠时，排名差异不宜当作结论；")
     lines.append("> `Δ 的 95% CI` 跨 0 或 p 为 `n.s.` 时，只能说\"方向一致\"，不能说\"显著更好\"。")
+    lines.append("> ⚠️ **多重比较未校正**：每库都对同一个 naive_linear 做了 7–8 次检验，")
+    lines.append("> 即使原假设全为真，也会有约 5% 的检验偶然显著。因此 p 只用于确认方向，")
+    lines.append("> 排序一律以效应量（Δ 与其 CI）与 §5 的机制解释为准。")
     return "\n".join(lines)
 
 

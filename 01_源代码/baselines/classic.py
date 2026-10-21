@@ -20,14 +20,25 @@ class NaiveLast(Forecaster):
 
 
 class NaiveLinear(Forecaster):
+    """naive_linear：对上下文做最小二乘线性拟合，再外推 horizon 步。
+
+    **只用上下文最近 ⌊n/2⌋ 个点拟合**（`n // 2`，向下取整）：电池序列的开头往往
+    是一段容量平台，把它纳入拟合会把斜率压得接近 0，外推反而跟不上真实衰减。
+    这是本文报告的 naive_linear 的真实定义（"线性外推"），不是全段最小二乘。
+
+    ⚠️ `k = n // 2` 这个写法**不能改成** `round(n*0.5)`：奇数长度上下文下两者差 1 个点，
+    拟合出的斜率就不同（实测 NASA B0005：k=41 → 84.253，k=42 → 84.339），
+    已发表的全部 naive_linear 数字都由 `n // 2` 产生。改这里等于换基线。
+    """
+
     name = "naive_linear"
+    fit_frac = 0.5          # 仅作文档标注；实际取 ⌊n*fit_frac⌋ 个点
 
     def predict(self, context: np.ndarray, horizon: int) -> np.ndarray:
         n = len(context)
         if n < 2:
             return np.full(horizon, float(context[-1]))
         x = np.arange(n, dtype=float)
-        # 只用最近一半点拟合，避免早期平台段主导
         k = max(2, n // 2)
         b, a = np.polyfit(x[-k:], context[-k:], 1)
         xf = np.arange(n, n + horizon, dtype=float)
