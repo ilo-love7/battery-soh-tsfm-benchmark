@@ -175,8 +175,14 @@ def main():
             continue
         print(f"\n=== {ds} ===")
         for _, r in sub.iterrows():
-            print(f"{r['display']:>12s} default={r['default']:.3f} "
-                  f"seeds={r['min']:.3f}-{r['max']:.3f} CV={r['cv_pct']:.1f}%")
+            # default 可能是 None（主表里没这个模型）：markdown 分支有 fmt 保护，
+            # 这里原来直接 :.3f 会 TypeError。补上同样的保护。
+            d = r["default"]
+            ds_txt = "—" if d is None or pd.isna(d) else f"{d:.3f}"
+            cv = r["cv_pct"]
+            cv_txt = "—" if pd.isna(cv) else f"{cv:.1f}%"
+            print(f"{r['display']:>12s} default={ds_txt} "
+                  f"seeds={r['min']:.3f}-{r['max']:.3f} CV={cv_txt}")
         print("  ", rank_check(ds, sub))
     print(f"\n已保存 {RESULTS / '种子方差.md'}")
 

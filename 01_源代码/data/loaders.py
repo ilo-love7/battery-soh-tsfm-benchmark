@@ -17,6 +17,7 @@
 """
 from __future__ import annotations
 
+import json
 import zipfile
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -64,12 +65,18 @@ def load_mit(cells_path: Path, cycles_path: Path,
 # ---------------------------------------------------------------- NASA
 def load_nasa(mat_dir: Path, cells: List[str]) -> Dict[str, pd.DataFrame]:
     """解析 NASA PCoE 的 .mat（每只电池一个文件）。"""
+    import sys
+
     import scipy.io as sio
 
     out: Dict[str, pd.DataFrame] = {}
+    missing = []
     for cid in cells:
         f = Path(mat_dir) / f"{cid}.mat"
         if not f.exists():
+            # 不静默跳过：少了 cell 会让分母从 4 变成 3，而主表照样出数，
+            # 下游只会看到"n=3"而不去想是文件没找到。这里必须告警。
+            missing.append(cid)
             continue
         m = sio.loadmat(str(f), squeeze_me=True, struct_as_record=False)
         struct = m[cid]
@@ -89,6 +96,10 @@ def load_nasa(mat_dir: Path, cells: List[str]) -> Dict[str, pd.DataFrame]:
             "cycle": np.arange(1, len(rows) + 1),
             "capacity_Ah": rows,
         })
+    if missing:
+        print(f"  [nasa] ⚠️ 找不到 {len(missing)}/{len(cells)} 个 .mat：{missing}"
+              f"（目录 {mat_dir}）。这些 cell 不会进入评测，分母会变小。",
+              file=sys.stderr, flush=True)
     return out
 
 
@@ -146,16 +157,149 @@ def _load_calce_xlsx(path: Path) -> Optional[pd.DataFrame]:
     return g.sort_values("cycle").reset_index(drop=True)
 
 
-_CALCE_CACHE = Path(__file__).resolve().parent / "processed" / "calce_capacity_v3.parquet"
-
 # 额定容量（Ah）：CS2 = 1.1 Ah LCO/石墨，CX2 = 1.35 Ah。用于判定"是否全深度老化数据"
 _CALCE_RATED = {"CS2": 1.1, "CX2": 1.35}
 
 # 满充满放的电压窗口：CALCE 单体上限 4.2 V、放电截止 2.7 V，留 0.05–0.15 V 容差。
 # 实测：真正全深度老化的电芯（CX2_16 等）每个循环 Vmin≈2.70 / Vmax≈4.20；
 # 浅工况文件（CS2_7 的 SOC 段）Vmin 只到 3.4–3.7，据此可稳定区分。
+# ⚠️ 这两个数是对外承诺的口径，改了等于换数据集筛选，必须同步 README / 短文 /
+#    02_数据集链接/CALCE_UMD.md 三处描述（2026-10-21 审计：文档曾写成 2.8/4.1，
+#    与代码不一致；实测两套阈值选出的 14 支完全相同，仅 CX2_34 差 1 个循环，
+#    而已发表数字由 2.85/4.15 产生，故统一改文档而非改代码）。
 _V_HI = 4.15
 _V_LO = 2.85
+
+_CALCE_CACHE = Path(__file__).resolve().parent / "processed" / "calce_capacity_v3.parquet"
+_CALCE_CACHE_META = _CALCE_CACHE.with_suffix(".meta.json")
+
+
+def _calce_cache_key(zip_dir: Path, zips: List[Path], thresholds: tuple,
+                     prefixes: Optional[List[str]] = None) -> dict:
+    """缓存的"来源指纹"。
+
+    ⚠️ 缓存必须绑定来源。曾出现过这样的隐患：load_calce 只看 `_CALCE_CACHE.exists()`
+    就用缓存，完全不看 `CALCE_DIR`。别人把 CALCE_DIR 指到自己的一份 zip 上，
+    拿到的却是本仓库作者机器上解析出来的 14 支——而且不报错。这是比"多跑十分钟"
+    严重得多的正确性问题。
+
+    ⚠️ `zips` 必须是**未按 prefixes 过滤的完整清单**。实测踩过：生产入口
+    `load_dataset()` 会传 `prefixes=["CS2","CX2"]`（27 个 zip），而直接调
+    `load_calce(dir)` 不带 prefixes 是 89 个 zip。若拿过滤后的清单算指纹，
+    同一个目录两种调法算出两个指纹，每次交替调用都触发 10 分钟重解析。
+    所以：`zips` 永远传全量，`prefixes` 单独作为一项写进指纹。
+    """
+    def _sig(p: Path):
+        st = p.stat()
+        return {"name": p.name, "size": st.st_size, "mtime": int(st.st_mtime)}
+    # ⚠️ zip_dir 必须走一遍 Path() 规范化：直接 str() 的话，
+    # `Path(...)` 会变成反斜杠、原始 str 保留正斜杠，同一目录算出两个指纹，
+    # 每轮都误判"来源不一致"而触发 10–20 分钟的重复解析。
+    return {"zip_dir": str(Path(zip_dir).expanduser()),
+            "prefixes": sorted(prefixes) if prefixes else [],
+            "zip_count": len(zips),
+            "zips": [_sig(z) for z in zips],
+            "v_lo": thresholds[0], "v_hi": thresholds[1],
+            "min_full_frac": 0.9, "min_cycles": 100}
+
+
+def _calce_cache_valid(zip_dir: Path, zips: List[Path], thresholds: tuple,
+                       prefixes: Optional[List[str]] = None) -> bool:
+    """缓存存在且来源指纹一致才允许复用。"""
+    if not (_CALCE_CACHE.exists() and _CALCE_CACHE_META.exists()):
+        return False
+    try:
+        old = json.loads(_CALCE_CACHE_META.read_text(encoding="utf-8"))
+    except Exception:
+        return False
+    new = _calce_cache_key(zip_dir, zips, thresholds, prefixes)
+    if old.get("zips") != new["zips"]:
+        return False
+    return all(old.get(k) == new[k] for k in ("zip_dir", "prefixes", "v_lo", "v_hi",
+                                              "min_full_frac", "min_cycles"))
+
+
+def load_calce(zip_dir: Path, prefixes: Optional[List[str]] = None,
+               rebuild: bool = False, min_fade: float = -0.05,
+               max_cycles: int = 20000, verbose: bool = False) -> Dict[str, pd.DataFrame]:
+    """读取 CALCE 系列（每个 zip 一支电池，内部几十个 xlsx，解析一次后缓存）。
+
+    缓存：data/processed/calce_capacity_v3.parquet（首次约 10–20 分钟，之后秒开）。
+    缓存带"来源指纹"（全量 zip 清单 + 名字/大小/mtime + 电压阈值 + prefixes）：
+    不一致就重新解析，绝不会拿旧缓存冒充新 `CALCE_DIR` 的数据。
+
+    ⚠️ 缓存是**按本次调用覆盖写**，不是增量合并：`prefixes` 会决定解析哪些 zip，
+    因此它必须进指纹。带 `["CS2","CX2"]` 和不带 prefixes 是两次不同的解析，
+    交替调用会各跑一次——这是"正确但慢"，好过"快但拿到别人的数据"。
+
+    ⚠️ 细胞筛选（写论文必须交代，详见 _calce_one_zip 文档串）：
+    1. 循环级：只保留**电压窗口满充满放**的循环（Vmin ≤ 2.85 且 Vmax ≥ 4.15）；
+    2. 电池级：全深度循环占比须 ≥ 90%，否则整支是浅工况/混合测试数据；
+    3. 电池级：满放容量须在 [0.55, 1.25]×额定，否则不是单体全深度老化数据；
+    4. 趋势级：末段/首段容量变化须 < min_fade（默认 −5%），剔除协议中途变更的电池；
+    5. 循环数 ≤ max_cycles（CX2_3 有 9 万个微脉冲循环）。
+    """
+    thresholds = (_V_LO, _V_HI)
+    zips_all = sorted(Path(zip_dir).glob("*.zip"))
+    if prefixes:
+        zips = [z for z in zips_all if any(z.name.startswith(p + "_") for p in prefixes)]
+    else:
+        zips = zips_all
+
+    # 指纹永远基于**全量** zip 清单 + prefixes，与本次实际解析多少无关：
+    # 否则"带 prefixes 的生产调用"和"不带 prefixes 的直接调用"会算出两个指纹，
+    # 每次交替都触发重复解析（实测踩过）。
+    if not rebuild and _calce_cache_valid(zip_dir, zips_all, thresholds, prefixes):
+        allf = pd.read_parquet(_CALCE_CACHE)
+        out = {}
+        for cid, g in allf.groupby("cell_id"):
+            out[str(cid)] = g[["cycle", "capacity_Ah"]].reset_index(drop=True)
+        if prefixes:
+            out = {k: v for k, v in out.items() if any(k.startswith(p + "_") for p in prefixes)}
+        if out:
+            if verbose:
+                print(f"  [calce] 命中缓存 {_CALCE_CACHE.name}（来源指纹一致）")
+            return _filter_calce(out, min_fade, max_cycles, verbose)
+
+    if not zips:
+        # 目录里没有可解析的 zip：不要打"重新解析 10–20 分钟"那种误导性提示，
+        # 并区分"目录空"与"前缀不匹配"两种情况（两者修法完全不同）。
+        all_zips = sorted(Path(zip_dir).expanduser().glob("*.zip"))
+        if not all_zips:
+            why = f"{Path(zip_dir).expanduser()} 下一个 .zip 都没有"
+        else:
+            why = (f"该目录有 {len(all_zips)} 个 zip，但没有任何文件名以 {prefixes} 开头")
+        print(f"  [calce] {why}，返回 0 支。请检查 CALCE_DIR / prefixes 是否指对。")
+        return {}
+
+    if _CALCE_CACHE.exists() and not rebuild:
+        print("  [calce] 缓存来源与当前 CALCE_DIR / 阈值不一致，重新解析原始 zip"
+              "（约 10–20 分钟）。若要强行用旧缓存："
+              f"删除 {_CALCE_CACHE_META.name} 后重跑，或设 rebuild 但请自行核对口径。")
+
+    out: Dict[str, pd.DataFrame] = {}
+    frames = []
+    for i, zp in enumerate(zips, 1):
+        rated = _CALCE_RATED.get(zp.stem.split("_")[0])
+        df = _calce_one_zip(zp, rated=rated, verbose=verbose)
+        if df is None or df.empty:
+            if verbose:
+                print(f"  [calce] {i}/{len(zips)} {zp.stem}: 不满足全深度老化条件，跳过",
+                      flush=True)
+            continue
+        out[zp.stem] = df
+        frames.append(df.assign(cell_id=zp.stem))
+        print(f"  [calce] {i}/{len(zips)} {zp.stem}: {len(df)} 循环", flush=True)
+
+    if frames:
+        _CALCE_CACHE.parent.mkdir(parents=True, exist_ok=True)
+        pd.concat(frames, ignore_index=True).to_parquet(_CALCE_CACHE, index=False)
+        _CALCE_CACHE_META.write_text(
+            json.dumps(_calce_cache_key(zip_dir, zips_all, thresholds, prefixes),
+                       ensure_ascii=False, indent=2),
+            encoding="utf-8")
+        print(f"  [calce] 缓存写入 {_CALCE_CACHE}（含来源指纹 {_CALCE_CACHE_META.name}）")
+    return _filter_calce(out, min_fade, max_cycles, verbose)
 
 
 def _calce_sort_key(name: str, cell: Optional[str] = None):
@@ -337,55 +481,6 @@ def _calce_file_caps(zf: zipfile.ZipFile, name: str) -> Optional[pd.DataFrame]:
     })
     g = g[g["capacity_Ah"] > 1e-4]
     return g if len(g) else None
-
-
-def load_calce(zip_dir: Path, prefixes: Optional[List[str]] = None,
-               rebuild: bool = False, min_fade: float = -0.05,
-               max_cycles: int = 20000, verbose: bool = False) -> Dict[str, pd.DataFrame]:
-    """读取 CALCE 系列（每个 zip 一支电池，内部几十个 xlsx，解析一次后缓存）。
-
-    缓存：data/processed/calce_capacity_v3.parquet（首次约 10–20 分钟，之后秒开）。
-
-    ⚠️ 细胞筛选（写论文必须交代，详见 _calce_one_zip 文档串）：
-    1. 循环级：只保留**电压窗口满充满放**的循环（Vmax ≥ 4.15 且 Vmin ≤ 2.85）；
-    2. 电池级：全深度循环占比须 ≥ 90%，否则整支是浅工况/混合测试数据；
-    3. 电池级：满放容量须在 [0.55, 1.25]×额定，否则不是单体全深度老化数据；
-    4. 趋势级：末段/首段容量变化须 < min_fade（默认 −5%），剔除协议中途变更的电池；
-    5. 循环数 ≤ max_cycles（CX2_3 有 9 万个微脉冲循环）。
-    """
-    if _CALCE_CACHE.exists() and not rebuild:
-        allf = pd.read_parquet(_CALCE_CACHE)
-        out = {}
-        for cid, g in allf.groupby("cell_id"):
-            out[str(cid)] = g[["cycle", "capacity_Ah"]].reset_index(drop=True)
-        if prefixes:
-            out = {k: v for k, v in out.items() if any(k.startswith(p + "_") for p in prefixes)}
-        if out:
-            return _filter_calce(out, min_fade, max_cycles, verbose)
-
-    zips = sorted(Path(zip_dir).glob("*.zip"))
-    if prefixes:
-        zips = [z for z in zips if any(z.name.startswith(p + "_") for p in prefixes)]
-
-    out: Dict[str, pd.DataFrame] = {}
-    frames = []
-    for i, zp in enumerate(zips, 1):
-        rated = _CALCE_RATED.get(zp.stem.split("_")[0])
-        df = _calce_one_zip(zp, rated=rated, verbose=verbose)
-        if df is None or df.empty:
-            if verbose:
-                print(f"  [calce] {i}/{len(zips)} {zp.stem}: 不满足全深度老化条件，跳过",
-                      flush=True)
-            continue
-        out[zp.stem] = df
-        frames.append(df.assign(cell_id=zp.stem))
-        print(f"  [calce] {i}/{len(zips)} {zp.stem}: {len(df)} 循环", flush=True)
-
-    if frames:
-        _CALCE_CACHE.parent.mkdir(parents=True, exist_ok=True)
-        pd.concat(frames, ignore_index=True).to_parquet(_CALCE_CACHE, index=False)
-        print(f"  [calce] 缓存写入 {_CALCE_CACHE}", flush=True)
-    return _filter_calce(out, min_fade, max_cycles, verbose)
 
 
 def _filter_calce(out: Dict[str, pd.DataFrame], min_fade: float,

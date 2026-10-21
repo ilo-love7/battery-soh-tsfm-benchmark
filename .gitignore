@@ -28,6 +28,11 @@ __pycache__/
 01_源代码/data/processed/calce_capacity.parquet
 01_源代码/data/processed/calce_capacity_v2.parquet
 
+# ---- CALCE 缓存的"来源指纹"：含本机绝对路径（zip_dir），不入库 ----
+# 别人 clone 后 CALCE_DIR 指向自己的目录，指纹自然不一致 → 重新解析，行为正确。
+# v3 parquet 本身是确定性的（实测两次全量重解析逐位一致），仍然入库。
+01_源代码/data/processed/calce_capacity_v3.meta.json
+
 # ---- 系统与编辑器 ----
 .DS_Store
 Thumbs.db

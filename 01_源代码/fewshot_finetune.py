@@ -175,6 +175,13 @@ def main():
     rec = {"k": args.k, "steps": args.steps, "lr": args.lr, "batch": args.batch,
            "seed": args.seed, "ctx": CTX, "horizon": HOR, "stride": STRIDE,
            "base_model": BASE_MODEL, "support_cells": sorted(support)}
+    # k 是"请求取前 k 支"，但 build_soh_series 会丢掉长度 < CTX+HOR 的序列，
+    # 实际支持集可能更小（ft8 实际只有 7 支）。这个差一必须写进记录并告警，
+    # 否则图上的横轴会标成 8，而真正训练只用了 7 支。
+    rec["n_support_actual"] = len(support)
+    if 0 < len(support) != args.k:
+        print(f"      ⚠️ 请求 k={args.k}，实际支持集只有 {len(support)} 支"
+              f"（其余序列短于 {CTX + HOR} 循环，无法切出训练窗口）", flush=True)
 
     if args.k == 0:
         print("      k=0：跳过训练，只记录零样本基线配置", flush=True)

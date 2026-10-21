@@ -241,8 +241,8 @@ def fig3(run: Dict[str, dict], frac: float, path: Path,
     if hits:
         ax2 = axes.flat[1]
         dss = list(hits)
+        # 只保留在至少一个库里有命中率数据的模型，按 COLORS 的固定顺序（图例稳定）
         models = [m for m in COLORS if any(m in hits[d] for d in dss)]
-        models = [m for m in models if any(m in hits[d] for d in dss)]
         w = 0.8 / max(len(dss), 1)
         xs = np.arange(len(models))
         prev = [np.nan] * len(models)     # 上一根柱的值，用于错开等高标签

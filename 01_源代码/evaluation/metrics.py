@@ -42,6 +42,11 @@ def lifetime_metrics(pred: np.ndarray, cycles: np.ndarray, truth: np.ndarray,
     eol_true: 官方 EOL（MIT 用 cycle_life）。MIT 序列在 EOL 处截断，
               按穿越判定永远找不到，必须显式给真值。
     真值未到 EOL 且无官方标签的 cell 不参与 EOL 统计。
+
+    ⚠️ 2026-10-21 审计：原先这里同时输出 `eol_abs_err` 与 `rul_abs_err`，
+    而 `rul_abs_err = |(eol_pred-start)-(eol_true-start)|` 与
+    `eol_abs_err = |eol_pred-eol_true|` **数学上恒等**，且全仓库没有任何地方读它。
+    留着只会让人误以为"寿命层有两个独立指标"。已删除，只保留 eol_abs_err。
     """
     cycles = np.asarray(cycles)
     truth_arr = np.asarray(truth, float)
@@ -69,13 +74,11 @@ def lifetime_metrics(pred: np.ndarray, cycles: np.ndarray, truth: np.ndarray,
         out["eol_hit"] = 0.0
         out["eol_pred"] = float("nan")
         out["eol_abs_err"] = float("nan")
-        out["rul_abs_err"] = float("nan")
         return out
 
     out["eol_hit"] = 1.0
     out["eol_pred"] = float(eol_pred)
     out["eol_abs_err"] = abs(eol_pred - eol_true)
-    out["rul_abs_err"] = abs((eol_pred - start_cycle) - (eol_true - start_cycle))
     return out
 
 

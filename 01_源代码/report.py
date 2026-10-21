@@ -29,6 +29,9 @@ ORDER = ["chronos-bolt", "chronos", "timesfm", "moirai", "lag-llama",
 
 
 KNOWN_TAGS = ("ctx512", "sens", "arimasmoke", "refactor")
+# 这些前缀的目录是消融/子实验，产物放二级目录（report.py 只扫一级）本来扫不到；
+# 列在这里是双保险——万一有人把它们提到一级目录，也不会混进主表。
+_SKIP_PREFIXES = ("abl-", "ablations-")
 
 
 def run_ts(meta: dict) -> str:
@@ -55,6 +58,22 @@ def run_tag(dir_name: str) -> str:
     return "main"
 
 
+_WARNED_KEYS: set = set()
+
+
+def _warn_bad_key(dir_name: str, key: str) -> None:
+    """summary.json 里出现无法解析成 (模型, 起点) 的键时告警一次。
+
+    这类键通常是消融/子实验留下的（如 `naive_linear_half@half`），
+    放进主表只会产生一行起点为 nan 的垃圾行。只警告不阻止，
+    让作者自己决定该不该进主表。
+    """
+    if (dir_name, key) in _WARNED_KEYS:
+        return
+    _WARNED_KEYS.add((dir_name, key))
+    print(f"  [report] 跳过无法解析的 summary 键：{dir_name} 中的 {key!r}")
+
+
 def collect(dataset_filter: str | None = None, skip_tags: tuple = ()) -> List[Dict]:
     """扫所有 summary.json。同一 (数据集,划分,实验,模型,起点) 只保留**最新**一条，
     避免历史目录把表撑出重复行；不同实验标签（main/sens/ctx512）分开保留。
@@ -65,6 +84,9 @@ def collect(dataset_filter: str | None = None, skip_tags: tuple = ()) -> List[Di
     best: Dict[tuple, tuple] = {}
     for f in sorted(RESULTS_ROOT.glob("*/summary.json")):
         if any(t in f.parent.name for t in skip_tags):
+            continue
+        if any(f.parent.name.startswith(p) for p in _SKIP_PREFIXES):
+            print(f"  [report] 跳过消融/子实验目录：{f.parent.name}")
             continue
         try:
             d = json.loads(f.read_text(encoding="utf-8"))
@@ -79,6 +101,16 @@ def collect(dataset_filter: str | None = None, skip_tags: tuple = ()) -> List[Di
         info = meta.get("model_info", {})
         for key, summ in (d.get("summary") or {}).items():
             model, _, frac = key.rpartition("@")
+            if not model:                      # 没有 "@" 的畸形键
+                _warn_bad_key(f.parent.name, key)
+                continue
+            try:
+                frac_f = float(frac)
+            except ValueError:
+                # 例如消融实验写的 "naive_linear_half@half"：分子是标签不是起点，
+                # 进主表只会得到一行 nan。跳过并告警，不静默吞掉。
+                _warn_bad_key(f.parent.name, key)
+                continue
             mi = info.get(model, {})
             eol_err = summ.get("eol_abs_err", {})
             eol_hit = summ.get("eol_hit", {})
@@ -88,7 +120,7 @@ def collect(dataset_filter: str | None = None, skip_tags: tuple = ()) -> List[Di
                 "划分": split,
                 "实验": exp,
                 "模型": model,
-                "起点": float(frac) if frac else float("nan"),
+                "起点": frac_f,
                 "n": mae_s.get("n", mi.get("n_ok", "")),      # 每格 n（不是整轮 n）
                 "MAE_smooth": mae_s.get("median", float("nan")),
                 "RMSE_smooth": summ.get("rmse_smooth", {}).get("median", float("nan")),

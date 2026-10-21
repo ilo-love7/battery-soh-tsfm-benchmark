@@ -283,6 +283,12 @@ cd 01_源代码
 ../venv/Scripts/python.exe analyze_shrinkage.py
 ../venv/Scripts/python.exe analyze_seeds.py
 
+# naive_linear 拟合窗口消融（本文 ⌊n/2⌋ vs 整段，同时与已发表数字对账）
+../venv/Scripts/python.exe ablate_naive_linear.py
+
+# few-shot 曲线（横轴按**实际**支持集大小 1/4/7/19 绘制）
+../venv/Scripts/python.exe plot_fewshot.py
+
 # 图（--runs 用分号分隔：结果目录名本身含逗号，所以不能用逗号分隔）
 ../venv/Scripts/python.exe figures.py --prefix mit_ \
   --runs "mit-zero-chronos-bolt,chronos,timesfm,naive_linear-ctx512;mit-zero-moirai;mit-zero-lag-llama;mit-zero-naive_last,naive_linear,exp_decay-refactor;mit-zero-arima"
@@ -295,8 +301,20 @@ cd 01_源代码
 一键全矩阵（表 1–表 5 + 图 1–图 6 的原始数据，约 10 小时 CPU）：
 
 ```bash
-bash scripts/run_matrix.sh all
+bash scripts/run_matrix.sh all     # 推理部分：mit / nasa / calce / sens / seed
 ```
+
+另外两段**不重跑推理**，只追加训练与汇总结果：
+
+```bash
+bash scripts/run_matrix.sh extra    # few-shot 微调（ft1/ft4/ft8/ftall）+ 微调评测
+                                     # + 跨库迁移 + ablate_naive_linear.py
+bash scripts/run_matrix.sh report   # 纯汇总：report / 显著性 / 机制 / 种子方差 / 消融
+                                     # + plot_fewshot + figures × 三库
+```
+
+`extra` 依赖已跑完的 `mit` / `calce` / `nasa` 推理格；`report` 只读 `03_实验结果/`,
+是**从干净克隆复现图与汇总产物**的标准入口（已在两次干净克隆上验证逐位一致）。
 
 输出在 `03_实验结果/<dataset>-<setting>-<models>/`：`per_cell_*.csv`、`summary.json`
 （含协议参数、包版本、权重路径、耗时、随机种子）、`predictions_*.npz`。
@@ -308,7 +326,7 @@ bash scripts/run_matrix.sh all
 ```
 01_源代码/
 ├── configs/config.py        路径解析 + 协议参数 + 模型注册表 + HF 镜像（唯一真源）
-├── data/loaders.py          MIT / NASA / CALCE 真实加载器（CALCE 带 parquet 缓存）
+├── data/loaders.py          MIT / NASA / CALCE 真实加载器（CALCE 带来源指纹的 parquet 缓存）
 ├── data/protocol.py         清洗 / SOH 归一 / 相对起点切分 / 平滑参考
 ├── adapters/base.py         Forecaster 接口 + 批量滚动递归 rolling_forecast_batch
 ├── adapters/                chronos / timesfm / lagllama / moirai（各自独立种子推进）
@@ -320,7 +338,9 @@ bash scripts/run_matrix.sh all
 ├── analyze_shrinkage.py     pred_ratio / 失配度 / 秩相关 → 衰减保留率.csv + fig5
 ├── analyze_seeds.py         多种子方差与排名翻转检查 → 种子方差.md
 ├── diag_curvature.py        knee_ratio（数据侧衰减加速比）
+├── ablate_naive_linear.py   naive_linear 拟合窗口消融（⌊n/2⌋ vs 整段）
 ├── fewshot_finetune.py      Chronos-Bolt 真梯度微调（k 支电池）+ 跨库迁移
+├── plot_fewshot.py          fig6：MAE / EOL 随**实际**支持集大小的变化
 └── figures.py               轨迹图 / 箱线图 / EOL 命中率 / 起点敏感性
 02_数据集链接/                三个数据集的来源、字段与获取方式（只写路径，不存数据）
 03_实验结果/                  每次运行的 per_cell / summary / predictions + 汇总与检验
@@ -354,6 +374,8 @@ requirements-models.txt       模型依赖（已实测可共存的版本组合 +
 | 8 | Windows 上 `pandas` 先于 `torch` 导入 | `OSError [WinError 1114] c10.dll 初始化例程失败` | `run_benchmark.py` 顶部按需预导入 torch |
 | 9 | 依赖缺失时**静默返回随机数** | 原版脚本"看起来跑成功了"，其实全是噪声 | 依赖缺失一律抛 `NotInstalledError`，禁止兜底 |
 | 10 | 汇总表用**文件 mtime** 判新旧 | 别人 clone 下来跑 `report.py`，`汇总表.csv` 和仓库里存的对不上：NASA chronos 的「目录/耗时」变成 `_det_b`，naive_linear 的 EOL 列从 20.6/3 变成 14.3/4（旧副本顶掉）。git 不保留 mtime，"保留最新"退化成"取决于检出顺序" | 改判 `summary.json` 里的 `meta["timestamp"]`（随内容一起提交，跨机器稳定），时间相同则保留 `sorted(glob)` 先到者 |
+| 11 | `scripts/run_matrix.sh` 与**已发布结果对不上** | 三个缺口：MIT ctx512 那格缺 `moirai/lag-llama/arima/refactor` 四个模型；MIT 敏感性段的模型集是 `chronos-bolt,chronos,...` 而实际发布目录是 `mit-zero-chronos-bolt,naive_linear,exp_decay-sens`；report 段不跑 few-shot 与消融，`fig6` 永远出不来 | 脚本补齐模型集，并新增 `extra`（few-shot 训练 + 微调评测 + 跨库迁移 + `ablate_naive_linear.py`）与 `report`（纯汇总出图）两段；目录命名就是 `figures.py` / `analyze_seeds.py` 的事实标准 |
+| 12 | CALCE **parquet 缓存遮蔽 `CALCE_DIR`** | 缓存只看 `exists()` 就复用，不看指向哪个目录：换一份 zip 或改电压阈值，拿到的还是旧缓存里的 14 支，且**不报错** | 缓存带"来源指纹"（zip 清单 + 名字/大小/mtime + 阈值）写进 `calce_capacity_v3.meta.json`，不一致就重新解析；同时修复"旧 `load_calce` 定义覆盖新定义"导致指纹一度不生效的问题。实测重解析后 14 支的循环数与容量和已发表 `CALCE_UMD.md` 逐位一致 |
 
 细节见 [`04_文档报告/执行记录-2026-10-20.md`](04_文档报告/执行记录-2026-10-20.md)。
 

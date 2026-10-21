@@ -71,8 +71,8 @@ CS2_7 的 1111 个里只有 110 个（9.9%）。之前把它们当寿命曲线�
 
 | 条件 | 含义 |
 |---|---|
-| `min(Voltage) ≤ 2.8 V` | 该循环确实放电到底 |
-| `max(Voltage) ≥ 4.1 V` | 该循环确实充满 |
+| `min(Voltage) ≤ 2.85 V` | 该循环确实放电到底 |
+| `max(Voltage) ≥ 4.15 V` | 该循环确实充满 |
 | 二者同时满足 | 记为"全深度循环"，进入 SOH 序列 |
 
 逐电池统计（`diag_calce_depth.py` 产出 `data/processed/calce_depth.csv`）：

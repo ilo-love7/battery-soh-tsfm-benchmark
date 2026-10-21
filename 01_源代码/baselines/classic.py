@@ -46,9 +46,20 @@ class NaiveLinear(Forecaster):
 
 
 class ExpDecay(Forecaster):
-    """Q(n) = a·exp(b·n) + c —— 电池文献标准参数化。"""
+    """Q(n) = a·exp(b·n) + c —— 电池文献标准参数化。
+
+    ⚠️ 拟合失败时**允许**退化为线性外推（比整格报废好），但必须留痕：
+    每次退化都会 `self.n_fallback += 1` 并发出 RuntimeWarning，
+    且 `n_fallback` 会经 `info()` 写进 summary.json。
+    此前这里是"注释说记录在案、实际什么都没记"——正是本项目红线
+    「绝不静默降级」要防的那类事。已发表的 exp_decay 结果**一次都没触发**
+    （已用 predictions_*.npz 逐一核对，无一条与 naive_linear 相同）。
+    """
 
     name = "exp_decay"
+
+    def __init__(self):
+        self.n_fallback = 0
 
     def predict(self, context: np.ndarray, horizon: int) -> np.ndarray:
         from scipy.optimize import curve_fit
@@ -71,18 +82,29 @@ class ExpDecay(Forecaster):
             if not np.all(np.isfinite(pred)):
                 raise RuntimeError("non-finite")
             return pred
-        except Exception:
-            # 拟合失败退化为线性外推（记录在案，不隐藏）
+        except Exception as e:
+            self.n_fallback += 1
+            warnings.warn(
+                f"exp_decay: curve_fit 失败（{type(e).__name__}: {e}），"
+                f"本次退化为线性外推（第 {self.n_fallback} 次）",
+                RuntimeWarning, stacklevel=2)
             return NaiveLinear().predict(context, horizon)
 
 
 class ARIMA(Forecaster):
-    """statsmodels ARIMA(2,1,2)。未安装 statsmodels 时显式报错。"""
+    """statsmodels ARIMA(2,1,2)。未安装 statsmodels 时显式报错。
+
+    ⚠️ 拟合失败退化为 naive_last 时同样留痕（`n_fallback` 进 summary.json）。
+    这条路径比 exp_decay 更危险：ARIMA 在噪声大的 SOH 序列上收斂失败并不罕见，
+    一旦静默发生，主表里那一行其实是"平推最后一个值"而标签仍写 arima。
+    已发表的 arima 结果**一次都没触发**（43 条预测逐一核对，无平推签名）。
+    """
 
     name = "arima"
 
     def __init__(self, order=(2, 1, 2)):
         self.order = order
+        self.n_fallback = 0
 
     def predict(self, context: np.ndarray, horizon: int) -> np.ndarray:
         try:
@@ -101,7 +123,12 @@ class ARIMA(Forecaster):
             if not np.all(np.isfinite(fc)):
                 raise RuntimeError("non-finite")
             return fc
-        except Exception:
+        except Exception as e:
+            self.n_fallback += 1
+            warnings.warn(
+                f"arima{self.order}: 拟合失败（{type(e).__name__}: {e}），"
+                f"本次退化为 naive_last（第 {self.n_fallback} 次）",
+                RuntimeWarning, stacklevel=2)
             return NaiveLast().predict(context, horizon)
 
 

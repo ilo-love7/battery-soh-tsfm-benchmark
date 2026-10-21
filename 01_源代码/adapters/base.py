@@ -50,7 +50,8 @@ class Forecaster(ABC):
                              "max_horizon": self.max_horizon,
                              "supports_batch": self.supports_batch}
         for k in ("model_id", "resolved", "checkpoint", "device", "num_samples",
-                  "seed", "bolt", "api", "order", "fit_frac", "ref_points"):
+                  "seed", "bolt", "api", "order", "fit_frac", "ref_points",
+                  "n_fallback"):
             if hasattr(self, k):
                 d[k] = getattr(self, k)
         return d
