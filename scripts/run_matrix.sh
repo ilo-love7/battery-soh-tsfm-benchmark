@@ -169,6 +169,9 @@ if has report; then
   # 在线代理（§9.5）：只用上下文特征 + 已落盘预测，零推理。产物在
   # 03_实验结果/online_proxy/ 与 04_文档报告/在线代理.md。
   an online_proxy.py
+  # 上下文范围核查（§9.4 可行性）：零推理，只读原始数据。产物在
+  # 03_实验结果/context_range.csv + context_truncation.csv + 04_文档报告/上下文范围.md。
+  an diag_context_range.py
   an diag_curvature.py --dataset mit --split test
   an diag_curvature.py --dataset nasa
   an diag_curvature.py --dataset calce
