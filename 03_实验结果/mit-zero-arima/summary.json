@@ -1,0 +1,148 @@
+{
+  "meta": {
+    "models": [
+      "arima"
+    ],
+    "dataset": "mit",
+    "setting": "zero",
+    "split": "test",
+    "start_fracs": [
+      0.5
+    ],
+    "chunk": 64,
+    "max_context_override": null,
+    "protocol": {
+      "start_frac": 0.5,
+      "start_frac_sensitivity": [
+        0.4,
+        0.5,
+        0.6
+      ],
+      "smooth_window": 11,
+      "smooth_order": 2,
+      "outlier_thresh": 0.03,
+      "soh_ref_points": 5,
+      "eol_threshold": 80.0,
+      "rolling_chunk": 64,
+      "seeds": [
+        42,
+        43,
+        44
+      ]
+    },
+    "n_cells": 43,
+    "n_tasks": 43,
+    "model_info": {
+      "arima": {
+        "name": "arima",
+        "max_context": null,
+        "max_horizon": null,
+        "supports_batch": false,
+        "elapsed_sec": 58.31,
+        "n_ok": 43,
+        "n_err": 0,
+        "chunk_used": 64
+      }
+    },
+    "packages": {
+      "torch": "2.14.1",
+      "transformers": "5.20.2",
+      "chronos-forecasting": "2.3.2",
+      "timesfm": "3.0.2",
+      "uni2ts": "not-installed",
+      "gluonts": "not-installed",
+      "numpy": "2.5.4",
+      "pandas": "3.0.6",
+      "scipy": "1.18.1",
+      "statsmodels": "0.15.0"
+    },
+    "python": "3.13.14",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "hf_endpoint": "https://hf-mirror.com",
+    "timestamp": "2026-10-20T11:46:56"
+  },
+  "summary": {
+    "arima@0.5": {
+      "eol_defined": {
+        "n": 43,
+        "median": 1.0,
+        "mean": 1.0,
+        "q25": 1.0,
+        "q75": 1.0,
+        "iqr": 0.0
+      },
+      "eol_hit": {
+        "n": 43,
+        "median": 0.0,
+        "mean": 0.0,
+        "q25": 0.0,
+        "q75": 0.0,
+        "iqr": 0.0
+      },
+      "eol_true": {
+        "n": 43,
+        "median": 561.0,
+        "mean": 709.2790697674419,
+        "q25": 486.0,
+        "q75": 848.0,
+        "iqr": 362.0
+      },
+      "mae_raw": {
+        "n": 43,
+        "median": 5.150023732958447,
+        "mean": 5.195162762629582,
+        "q25": 4.816369367309541,
+        "q75": 6.115624357618139,
+        "iqr": 1.2992549903085981
+      },
+      "mae_smooth": {
+        "n": 43,
+        "median": 5.150066353715046,
+        "mean": 5.1949877451594695,
+        "q25": 4.816272830535054,
+        "q75": 6.11559997352872,
+        "iqr": 1.2993271429936666
+      },
+      "mape_raw": {
+        "n": 43,
+        "median": 5.87832951778111,
+        "mean": 5.994516742396765,
+        "q25": 5.428573613884774,
+        "q75": 7.1668222263092005,
+        "iqr": 1.7382486124244263
+      },
+      "n_context": {
+        "n": 43,
+        "median": 297.0,
+        "mean": 360.8139534883721,
+        "q25": 257.5,
+        "q75": 423.0,
+        "iqr": 165.5
+      },
+      "n_horizon": {
+        "n": 43,
+        "median": 298.0,
+        "mean": 361.2325581395349,
+        "q25": 258.5,
+        "q75": 423.0,
+        "iqr": 164.5
+      },
+      "rmse_raw": {
+        "n": 43,
+        "median": 7.089774933683347,
+        "mean": 7.264857989407547,
+        "q25": 6.7061008203077055,
+        "q75": 8.582684097572336,
+        "iqr": 1.876583277264631
+      },
+      "rmse_smooth": {
+        "n": 43,
+        "median": 7.089750308268218,
+        "mean": 7.264712320811605,
+        "q25": 6.706024552298796,
+        "q75": 8.582545967249192,
+        "iqr": 1.8765214149503961
+      }
+    }
+  }
+}

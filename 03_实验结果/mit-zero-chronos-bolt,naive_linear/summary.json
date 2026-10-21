@@ -1,0 +1,247 @@
+{
+  "meta": {
+    "models": [
+      "chronos-bolt",
+      "naive_linear"
+    ],
+    "dataset": "mit",
+    "setting": "zero",
+    "split": "secondary_test",
+    "start_fracs": [
+      0.5
+    ],
+    "chunk": 64,
+    "max_context_override": null,
+    "protocol": {
+      "start_frac": 0.5,
+      "start_frac_sensitivity": [
+        0.4,
+        0.5,
+        0.6
+      ],
+      "smooth_window": 11,
+      "smooth_order": 2,
+      "outlier_thresh": 0.03,
+      "soh_ref_points": 5,
+      "eol_threshold": 80.0,
+      "rolling_chunk": 64,
+      "seeds": [
+        42,
+        43,
+        44
+      ]
+    },
+    "n_cells": 40,
+    "n_tasks": 40,
+    "model_info": {
+      "chronos-bolt": {
+        "name": "chronos-bolt",
+        "max_context": 2048,
+        "max_horizon": 64,
+        "supports_batch": true,
+        "model_id": "amazon/chronos-bolt-small",
+        "resolved": "C:\\Users\\34648\\Desktop\\智诚时序基础模型项目\\shared\\models\\chronos-bolt-small",
+        "device": "cpu",
+        "num_samples": 20,
+        "seed": 42,
+        "bolt": true,
+        "elapsed_sec": 26.01,
+        "n_ok": 40,
+        "n_err": 0,
+        "chunk_used": 64
+      },
+      "naive_linear": {
+        "name": "naive_linear",
+        "max_context": null,
+        "max_horizon": null,
+        "supports_batch": false,
+        "elapsed_sec": 0.04,
+        "n_ok": 40,
+        "n_err": 0,
+        "chunk_used": 64
+      }
+    },
+    "packages": {
+      "torch": "2.14.1",
+      "transformers": "5.20.2",
+      "chronos-forecasting": "2.3.2",
+      "timesfm": "3.0.2",
+      "uni2ts": "not-installed",
+      "gluonts": "not-installed",
+      "numpy": "2.5.4",
+      "pandas": "3.0.6",
+      "scipy": "1.18.1",
+      "statsmodels": "0.15.0"
+    },
+    "python": "3.13.14",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "hf_endpoint": "https://hf-mirror.com",
+    "timestamp": "2026-10-20T11:47:28"
+  },
+  "summary": {
+    "chronos-bolt@0.5": {
+      "eol_defined": {
+        "n": 40,
+        "median": 1.0,
+        "mean": 1.0,
+        "q25": 1.0,
+        "q75": 1.0,
+        "iqr": 0.0
+      },
+      "eol_hit": {
+        "n": 40,
+        "median": 0.0,
+        "mean": 0.0,
+        "q25": 0.0,
+        "q75": 0.0,
+        "iqr": 0.0
+      },
+      "eol_true": {
+        "n": 40,
+        "median": 964.5,
+        "mean": 1032.0,
+        "q25": 827.25,
+        "q75": 1122.75,
+        "iqr": 295.5
+      },
+      "mae_raw": {
+        "n": 40,
+        "median": 2.5281839810849136,
+        "mean": 2.399885354265405,
+        "q25": 2.1650084081858654,
+        "q75": 2.7994733565518852,
+        "iqr": 0.6344649483660199
+      },
+      "mae_smooth": {
+        "n": 40,
+        "median": 2.5272541109249507,
+        "mean": 2.39974204804885,
+        "q25": 2.165007234741192,
+        "q75": 2.7994538435303067,
+        "iqr": 0.6344466087891147
+      },
+      "mape_raw": {
+        "n": 40,
+        "median": 2.8637493821231788,
+        "mean": 2.7110468700175394,
+        "q25": 2.470277704746649,
+        "q75": 3.153660084694468,
+        "iqr": 0.6833823799478189
+      },
+      "n_context": {
+        "n": 40,
+        "median": 481.5,
+        "mean": 515.225,
+        "q25": 412.75,
+        "q75": 560.75,
+        "iqr": 148.0
+      },
+      "n_horizon": {
+        "n": 40,
+        "median": 482.0,
+        "mean": 515.775,
+        "q25": 413.5,
+        "q75": 561.0,
+        "iqr": 147.5
+      },
+      "rmse_raw": {
+        "n": 40,
+        "median": 4.228526719144988,
+        "mean": 3.9450934548995304,
+        "q25": 3.55430697658095,
+        "q75": 4.470632307539137,
+        "iqr": 0.9163253309581876
+      },
+      "rmse_smooth": {
+        "n": 40,
+        "median": 4.228475900558329,
+        "mean": 3.9450503473513265,
+        "q25": 3.554280429372351,
+        "q75": 4.4705732419513255,
+        "iqr": 0.9162928125789747
+      }
+    },
+    "naive_linear@0.5": {
+      "eol_defined": {
+        "n": 40,
+        "median": 1.0,
+        "mean": 1.0,
+        "q25": 1.0,
+        "q75": 1.0,
+        "iqr": 0.0
+      },
+      "eol_hit": {
+        "n": 40,
+        "median": 0.0,
+        "mean": 0.0,
+        "q25": 0.0,
+        "q75": 0.0,
+        "iqr": 0.0
+      },
+      "eol_true": {
+        "n": 40,
+        "median": 964.5,
+        "mean": 1032.0,
+        "q25": 827.25,
+        "q75": 1122.75,
+        "iqr": 295.5
+      },
+      "mae_raw": {
+        "n": 40,
+        "median": 2.797963574730396,
+        "mean": 2.690109539497926,
+        "q25": 2.4369252684590625,
+        "q75": 3.0636368288974616,
+        "iqr": 0.626711560438399
+      },
+      "mae_smooth": {
+        "n": 40,
+        "median": 2.797945255239036,
+        "mean": 2.6900924571256852,
+        "q25": 2.4369096517911606,
+        "q75": 3.0636317270971962,
+        "iqr": 0.6267220753060356
+      },
+      "mape_raw": {
+        "n": 40,
+        "median": 3.1395520917327575,
+        "mean": 3.0293506366316003,
+        "q25": 2.723625849565284,
+        "q75": 3.4440954024222448,
+        "iqr": 0.7204695528569607
+      },
+      "n_context": {
+        "n": 40,
+        "median": 481.5,
+        "mean": 515.225,
+        "q25": 412.75,
+        "q75": 560.75,
+        "iqr": 148.0
+      },
+      "n_horizon": {
+        "n": 40,
+        "median": 482.0,
+        "mean": 515.775,
+        "q25": 413.5,
+        "q75": 561.0,
+        "iqr": 147.5
+      },
+      "rmse_raw": {
+        "n": 40,
+        "median": 4.5077261385952285,
+        "mean": 4.257006968442359,
+        "q25": 4.044457149621199,
+        "q75": 4.718063236295604,
+        "iqr": 0.6736060866744049
+      },
+      "rmse_smooth": {
+        "n": 40,
+        "median": 4.507677526904381,
+        "mean": 4.256964767496917,
+        "q25": 4.044428785913322,
+        "q75": 4.7180227291806585,
+        "iqr": 0.6735939432673366
+      }
+    }
+  }
+}

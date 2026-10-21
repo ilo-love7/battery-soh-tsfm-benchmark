@@ -1,0 +1,161 @@
+{
+  "meta": {
+    "models": [
+      "moirai"
+    ],
+    "dataset": "nasa",
+    "setting": "zero",
+    "split": null,
+    "start_fracs": [
+      0.5
+    ],
+    "chunk": 64,
+    "max_context_override": null,
+    "protocol": {
+      "start_frac": 0.5,
+      "start_frac_sensitivity": [
+        0.4,
+        0.5,
+        0.6
+      ],
+      "smooth_window": 11,
+      "smooth_order": 2,
+      "outlier_thresh": 0.03,
+      "soh_ref_points": 5,
+      "eol_threshold": 80.0,
+      "rolling_chunk": 64,
+      "seeds": [
+        42,
+        43,
+        44
+      ]
+    },
+    "n_cells": 4,
+    "n_tasks": 4,
+    "model_info": {
+      "moirai": {
+        "name": "moirai",
+        "max_context": 512,
+        "max_horizon": 64,
+        "supports_batch": true,
+        "model_id": "Salesforce/moirai-1.0-R-small",
+        "resolved": "C:\\Users\\34648\\Desktop\\智诚时序基础模型项目\\shared\\models\\moirai-1.0-R-small",
+        "device": "cpu",
+        "num_samples": 100,
+        "seed": 0,
+        "elapsed_sec": 12.08,
+        "n_ok": 4,
+        "n_err": 0,
+        "chunk_used": 64
+      }
+    },
+    "packages": {
+      "torch": "2.14.1",
+      "transformers": "not-installed",
+      "chronos-forecasting": "not-installed",
+      "timesfm": "not-installed",
+      "uni2ts": "2.0.0",
+      "gluonts": "0.14.4",
+      "numpy": "1.26.4",
+      "pandas": "2.1.4",
+      "scipy": "1.17.1",
+      "statsmodels": "not-installed"
+    },
+    "python": "3.12.10",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "hf_endpoint": "https://hf-mirror.com",
+    "timestamp": "2026-10-21T14:03:07"
+  },
+  "summary": {
+    "moirai@0.5": {
+      "eol_defined": {
+        "n": 4,
+        "median": 1.0,
+        "mean": 0.75,
+        "q25": 0.75,
+        "q75": 1.0,
+        "iqr": 0.25
+      },
+      "eol_hit": {
+        "n": 3,
+        "median": 0.0,
+        "mean": 0.0,
+        "q25": 0.0,
+        "q75": 0.0,
+        "iqr": 0.0
+      },
+      "eol_start_below": {
+        "n": 1,
+        "median": 1.0,
+        "mean": 1.0,
+        "q25": 1.0,
+        "q75": 1.0,
+        "iqr": 0.0
+      },
+      "eol_true": {
+        "n": 3,
+        "median": 106.0930399434374,
+        "mean": 102.71169396928808,
+        "q25": 91.71289589089345,
+        "q75": 115.40116503475735,
+        "iqr": 23.688269143863906
+      },
+      "mae_raw": {
+        "n": 4,
+        "median": 6.612675822841539,
+        "mean": 6.938291654875867,
+        "q25": 5.872815993082431,
+        "q75": 7.678151484634975,
+        "iqr": 1.8053354915525448
+      },
+      "mae_smooth": {
+        "n": 4,
+        "median": 6.579420284836931,
+        "mean": 6.912443801433169,
+        "q25": 5.843452775214653,
+        "q75": 7.6484113110554475,
+        "iqr": 1.804958535840795
+      },
+      "mape_raw": {
+        "n": 4,
+        "median": 9.743175139377488,
+        "mean": 9.784534092734138,
+        "q25": 7.647662325157894,
+        "q75": 11.880046906953732,
+        "iqr": 4.232384581795838
+      },
+      "n_context": {
+        "n": 4,
+        "median": 83.0,
+        "mean": 78.5,
+        "q25": 78.5,
+        "q75": 83.0,
+        "iqr": 4.5
+      },
+      "n_horizon": {
+        "n": 4,
+        "median": 83.5,
+        "mean": 79.25,
+        "q25": 78.75,
+        "q75": 84.0,
+        "iqr": 5.25
+      },
+      "rmse_raw": {
+        "n": 4,
+        "median": 9.376694175932474,
+        "mean": 9.273348088596851,
+        "q25": 7.713264626923711,
+        "q75": 10.936777637605616,
+        "iqr": 3.2235130106819048
+      },
+      "rmse_smooth": {
+        "n": 4,
+        "median": 9.356214704908222,
+        "mean": 9.250594880017454,
+        "q25": 7.694784842853347,
+        "q75": 10.91202474207233,
+        "iqr": 3.217239899218982
+      }
+    }
+  }
+}

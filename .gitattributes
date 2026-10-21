@@ -1,0 +1,16 @@
+# 统一换行，避免 Windows 上的 CRLF 污染脚本与数据文件
+* text=auto
+
+*.sh    text eol=lf
+*.py    text eol=lf
+*.md    text eol=lf
+*.json  text eol=lf
+*.cff   text eol=lf
+*.yml   text eol=lf
+*.bat   text eol=crlf
+
+# 二进制，不做换行转换
+*.png   binary
+*.npz   binary
+*.parquet binary
+*.ckpt  binary

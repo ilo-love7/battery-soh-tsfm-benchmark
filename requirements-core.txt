@@ -1,0 +1,14 @@
+# 核心依赖：跑经典基线 + 数据加载只需要这些
+# 安装：pip install -r requirements-core.txt
+numpy>=1.24
+pandas>=2.0
+scipy>=1.11
+scikit-learn>=1.3
+matplotlib>=3.8
+openpyxl>=3.1
+pyarrow>=14
+tqdm>=4.66
+python-calamine>=0.9      # CALCE xlsx 加速解析（比 openpyxl 快 ~16 倍，缺了会自动回退）
+
+# ARIMA 基线需要（已实测 0.15.0 可用）
+statsmodels>=0.14

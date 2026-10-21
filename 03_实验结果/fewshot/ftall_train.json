@@ -1,0 +1,103 @@
+{
+  "k": 41,
+  "steps": 300,
+  "lr": 1e-05,
+  "batch": 16,
+  "seed": 42,
+  "ctx": 512,
+  "horizon": 64,
+  "stride": 16,
+  "base_model": "amazon/chronos-bolt-small",
+  "support_cells": [
+    "b1c1",
+    "b1c11",
+    "b1c15",
+    "b1c17",
+    "b1c19",
+    "b1c24",
+    "b1c26",
+    "b1c28",
+    "b1c3",
+    "b1c30",
+    "b1c32",
+    "b1c34",
+    "b1c36",
+    "b1c38",
+    "b1c40",
+    "b1c42",
+    "b1c44",
+    "b1c5",
+    "b1c7"
+  ],
+  "n_windows": 400,
+  "history": [
+    {
+      "step": 1,
+      "loss": 16.63609504699707,
+      "elapsed_sec": 0.9
+    },
+    {
+      "step": 25,
+      "loss": 7.769347190856934,
+      "elapsed_sec": 22.8
+    },
+    {
+      "step": 50,
+      "loss": 10.601212501525879,
+      "elapsed_sec": 46.5
+    },
+    {
+      "step": 75,
+      "loss": 9.017746925354004,
+      "elapsed_sec": 70.1
+    },
+    {
+      "step": 100,
+      "loss": 10.307336807250977,
+      "elapsed_sec": 94.3
+    },
+    {
+      "step": 125,
+      "loss": 8.873038291931152,
+      "elapsed_sec": 118.1
+    },
+    {
+      "step": 150,
+      "loss": 9.42415714263916,
+      "elapsed_sec": 141.2
+    },
+    {
+      "step": 175,
+      "loss": 7.753447532653809,
+      "elapsed_sec": 165.2
+    },
+    {
+      "step": 200,
+      "loss": 9.716578483581543,
+      "elapsed_sec": 189.4
+    },
+    {
+      "step": 225,
+      "loss": 10.404918670654297,
+      "elapsed_sec": 213.8
+    },
+    {
+      "step": 250,
+      "loss": 9.887210845947266,
+      "elapsed_sec": 237.9
+    },
+    {
+      "step": 275,
+      "loss": 9.389944076538086,
+      "elapsed_sec": 262.1
+    },
+    {
+      "step": 300,
+      "loss": 6.650238037109375,
+      "elapsed_sec": 285.9
+    }
+  ],
+  "model_id": "amazon/chronos-bolt-small-ftall",
+  "output_dir": "C:\\Users\\34648\\Desktop\\智诚时序基础模型项目\\shared\\models\\chronos-bolt-small-ftall",
+  "timestamp": "2026-10-21T13:20:59"
+}

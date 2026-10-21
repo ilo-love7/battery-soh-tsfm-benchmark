@@ -1,0 +1,37 @@
+# ---- 虚拟环境（体积大、平台相关，不入库） ----
+venv/
+venv-moirai/
+.venv/
+env/
+
+# ---- Python 产物 ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.ipynb_checkpoints/
+.pytest_cache/
+
+# ---- 模型权重与 HF 缓存（按 README「模型权重」自行下载） ----
+/shared/
+
+# ---- 原始数据集（只引用路径，不入库；见 02_数据集链接/） ----
+/data/
+
+# ---- 本机路径覆盖（configs/local_paths.example.py 才是模板） ----
+01_源代码/configs/local_paths.py
+
+# ---- 已确认有问题的历史产物：保留在本机便于审计，不发布 ----
+03_实验结果/_deprecated/
+03_实验结果/_logs/
+
+# ---- 已被 v3 取代的 CALCE 缓存 ----
+01_源代码/data/processed/calce_capacity.parquet
+01_源代码/data/processed/calce_capacity_v2.parquet
+
+# ---- 系统与编辑器 ----
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+*.log

@@ -1,0 +1,88 @@
+{
+  "k": 4,
+  "steps": 300,
+  "lr": 1e-05,
+  "batch": 16,
+  "seed": 42,
+  "ctx": 512,
+  "horizon": 64,
+  "stride": 16,
+  "base_model": "amazon/chronos-bolt-small",
+  "support_cells": [
+    "b1c1",
+    "b1c11",
+    "b1c15",
+    "b1c17"
+  ],
+  "n_windows": 140,
+  "history": [
+    {
+      "step": 1,
+      "loss": 14.994261741638184,
+      "elapsed_sec": 0.8
+    },
+    {
+      "step": 25,
+      "loss": 9.451987266540527,
+      "elapsed_sec": 20.7
+    },
+    {
+      "step": 50,
+      "loss": 9.08593463897705,
+      "elapsed_sec": 41.9
+    },
+    {
+      "step": 75,
+      "loss": 7.516888618469238,
+      "elapsed_sec": 63.5
+    },
+    {
+      "step": 100,
+      "loss": 9.43289566040039,
+      "elapsed_sec": 85.6
+    },
+    {
+      "step": 125,
+      "loss": 15.409512519836426,
+      "elapsed_sec": 108.5
+    },
+    {
+      "step": 150,
+      "loss": 11.384230613708496,
+      "elapsed_sec": 129.7
+    },
+    {
+      "step": 175,
+      "loss": 9.045676231384277,
+      "elapsed_sec": 153.2
+    },
+    {
+      "step": 200,
+      "loss": 8.25081729888916,
+      "elapsed_sec": 176.2
+    },
+    {
+      "step": 225,
+      "loss": 11.913361549377441,
+      "elapsed_sec": 201.8
+    },
+    {
+      "step": 250,
+      "loss": 9.516291618347168,
+      "elapsed_sec": 225.8
+    },
+    {
+      "step": 275,
+      "loss": 7.5641937255859375,
+      "elapsed_sec": 247.3
+    },
+    {
+      "step": 300,
+      "loss": 7.7315673828125,
+      "elapsed_sec": 269.5
+    }
+  ],
+  "model_id": "amazon/chronos-bolt-small-ft4",
+  "output_dir": "C:\\Users\\34648\\Desktop\\智诚时序基础模型项目\\shared\\models\\chronos-bolt-small-ft4",
+  "timestamp": "2026-10-21T13:32:00"
+}

@@ -1,0 +1,175 @@
+{
+  "meta": {
+    "models": [
+      "lag-llama"
+    ],
+    "dataset": "mit",
+    "setting": "zero",
+    "split": "test",
+    "start_fracs": [
+      0.5
+    ],
+    "chunk": 64,
+    "max_context_override": null,
+    "protocol": {
+      "start_frac": 0.5,
+      "start_frac_sensitivity": [
+        0.4,
+        0.5,
+        0.6
+      ],
+      "smooth_window": 11,
+      "smooth_order": 2,
+      "outlier_thresh": 0.03,
+      "soh_ref_points": 5,
+      "eol_threshold": 80.0,
+      "rolling_chunk": 64,
+      "seeds": [
+        42,
+        43,
+        44
+      ]
+    },
+    "n_cells": 43,
+    "n_tasks": 43,
+    "model_info": {
+      "lag-llama": {
+        "name": "lag-llama",
+        "max_context": 32,
+        "max_horizon": 64,
+        "supports_batch": true,
+        "device": "cpu",
+        "num_samples": 10,
+        "seed": 0,
+        "elapsed_sec": 501.83,
+        "n_ok": 43,
+        "n_err": 0,
+        "chunk_used": 64
+      }
+    },
+    "packages": {
+      "torch": "2.14.1",
+      "transformers": "not-installed",
+      "chronos-forecasting": "not-installed",
+      "timesfm": "not-installed",
+      "uni2ts": "2.0.0",
+      "gluonts": "0.14.4",
+      "numpy": "1.26.4",
+      "pandas": "2.1.4",
+      "scipy": "1.17.1",
+      "statsmodels": "not-installed"
+    },
+    "python": "3.12.10",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "hf_endpoint": "https://hf-mirror.com",
+    "timestamp": "2026-10-21T14:20:19"
+  },
+  "summary": {
+    "lag-llama@0.5": {
+      "eol_abs_err": {
+        "n": 43,
+        "median": 197.02399306005276,
+        "mean": 265.50893542212833,
+        "q25": 156.76236598235388,
+        "q75": 307.8712336066438,
+        "iqr": 151.1088676242899
+      },
+      "eol_defined": {
+        "n": 43,
+        "median": 1.0,
+        "mean": 1.0,
+        "q25": 1.0,
+        "q75": 1.0,
+        "iqr": 0.0
+      },
+      "eol_hit": {
+        "n": 43,
+        "median": 1.0,
+        "mean": 1.0,
+        "q25": 1.0,
+        "q75": 1.0,
+        "iqr": 0.0
+      },
+      "eol_pred": {
+        "n": 43,
+        "median": 367.4399843405987,
+        "mean": 443.7701343453135,
+        "q25": 328.4547122248023,
+        "q75": 506.6638782193759,
+        "iqr": 178.2091659945736
+      },
+      "eol_true": {
+        "n": 43,
+        "median": 561.0,
+        "mean": 709.2790697674419,
+        "q25": 486.0,
+        "q75": 848.0,
+        "iqr": 362.0
+      },
+      "mae_raw": {
+        "n": 43,
+        "median": 7.0530245467922335,
+        "mean": 9.608089995042,
+        "q25": 6.108969573814894,
+        "q75": 11.000734820851804,
+        "iqr": 4.8917652470369095
+      },
+      "mae_smooth": {
+        "n": 43,
+        "median": 7.053433852666582,
+        "mean": 9.607719009306,
+        "q25": 6.104694243418398,
+        "q75": 10.999832273108694,
+        "iqr": 4.895138029690297
+      },
+      "mape_raw": {
+        "n": 43,
+        "median": 7.780451906885267,
+        "mean": 10.614390286655228,
+        "q25": 6.701991663517525,
+        "q75": 12.196404534750078,
+        "iqr": 5.494412871232553
+      },
+      "n_context": {
+        "n": 43,
+        "median": 297.0,
+        "mean": 360.8139534883721,
+        "q25": 257.5,
+        "q75": 423.0,
+        "iqr": 165.5
+      },
+      "n_horizon": {
+        "n": 43,
+        "median": 298.0,
+        "mean": 361.2325581395349,
+        "q25": 258.5,
+        "q75": 423.0,
+        "iqr": 164.5
+      },
+      "rmse_raw": {
+        "n": 43,
+        "median": 9.938201591412987,
+        "mean": 12.492169100950075,
+        "q25": 8.845867034469222,
+        "q75": 14.110725341263397,
+        "iqr": 5.264858306794174
+      },
+      "rmse_smooth": {
+        "n": 43,
+        "median": 9.93648818615109,
+        "mean": 12.491772082059086,
+        "q25": 8.844995322731208,
+        "q75": 14.110491214964334,
+        "iqr": 5.265495892233126
+      },
+      "rul_abs_err": {
+        "n": 43,
+        "median": 197.02399306005276,
+        "mean": 265.50893542212833,
+        "q25": 156.76236598235388,
+        "q75": 307.8712336066438,
+        "iqr": 151.1088676242899
+      }
+    }
+  }
+}

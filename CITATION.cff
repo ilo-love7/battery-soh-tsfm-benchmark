@@ -1,0 +1,51 @@
+cff-version: 1.2.0
+message: "If you use this benchmark or its results, please cite it as below."
+title: "Do Zero-Shot Time-Series Foundation Models Beat Simple Baselines for Battery SOH Prediction? A Three-Dataset Benchmark"
+abstract: >-
+  A reproducible benchmark that evaluates five time-series foundation models
+  (Chronos-Bolt, Chronos-T5, TimesFM 2.5, Moirai-1.0, Lag-Llama) in the
+  zero-shot regime against four classical baselines on three public
+  lithium-ion aging datasets (MIT-Stanford, NASA PCoE, CALCE UMD), with
+  paired bootstrap confidence intervals, Wilcoxon signed-rank tests,
+  multi-seed variance, start-point sensitivity and cross-dataset transfer.
+version: 1.0.0
+date-released: "2026-10-21"
+license: MIT
+type: software
+keywords:
+  - time series
+  - foundation model
+  - zero-shot forecasting
+  - lithium-ion battery
+  - state of health
+  - benchmark
+  - reproducibility
+authors:
+  # 如需署名，把下面这一条换成你自己的名字（CFF 支持 given-names + family-names）
+  - name: "Zhicheng Time-Series Benchmark Project"
+repository-artifact: "https://github.com/<your-account>/<your-repo>"
+references:
+  - type: article
+    title: "Chronos: Learning the Language of Time Series"
+    authors:
+      - name: "Abdul Fatir Ansari et al."
+    year: 2024
+    journal: "Transactions on Machine Learning Research"
+  - type: article
+    title: "A decoder-only foundation model for time-series forecasting (TimesFM)"
+    authors:
+      - name: "Abhimanyu Das et al."
+    year: 2024
+    journal: "ICML"
+  - type: article
+    title: "Unified Training of Universal Time Series Forecasting Transformers (Moirai)"
+    authors:
+      - name: "Gerald Woo et al."
+    year: 2024
+    journal: "ICML"
+  - type: article
+    title: "Lag-Llama: Towards Foundation Models for Probabilistic Time Series Forecasting"
+    authors:
+      - name: "Kashif Rasul et al."
+    year: 2023
+    journal: "arXiv:2310.08278"

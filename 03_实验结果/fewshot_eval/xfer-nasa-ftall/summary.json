@@ -1,0 +1,186 @@
+{
+  "meta": {
+    "models": [
+      "chronos-bolt"
+    ],
+    "dataset": "nasa",
+    "setting": "zero",
+    "split": null,
+    "start_fracs": [
+      0.5
+    ],
+    "chunk": 64,
+    "max_context_override": 512,
+    "protocol": {
+      "start_frac": 0.5,
+      "start_frac_sensitivity": [
+        0.4,
+        0.5,
+        0.6
+      ],
+      "smooth_window": 11,
+      "smooth_order": 2,
+      "outlier_thresh": 0.03,
+      "soh_ref_points": 5,
+      "eol_threshold": 80.0,
+      "rolling_chunk": 64,
+      "seeds": [
+        42,
+        43,
+        44
+      ]
+    },
+    "n_cells": 4,
+    "n_tasks": 4,
+    "model_info": {
+      "chronos-bolt": {
+        "name": "chronos-bolt",
+        "max_context": 512,
+        "max_horizon": 64,
+        "supports_batch": true,
+        "model_id": "amazon/chronos-bolt-small-ftall",
+        "resolved": "C:\\Users\\34648\\Desktop\\智诚时序基础模型项目\\shared\\models\\chronos-bolt-small-ftall",
+        "device": "cpu",
+        "num_samples": 20,
+        "seed": 42,
+        "bolt": true,
+        "elapsed_sec": 10.98,
+        "n_ok": 4,
+        "n_err": 0,
+        "chunk_used": 64
+      }
+    },
+    "packages": {
+      "torch": "2.14.1",
+      "transformers": "5.20.2",
+      "chronos-forecasting": "2.3.2",
+      "timesfm": "3.0.2",
+      "uni2ts": "not-installed",
+      "gluonts": "not-installed",
+      "numpy": "2.5.4",
+      "pandas": "3.0.6",
+      "scipy": "1.18.1",
+      "statsmodels": "0.15.0"
+    },
+    "python": "3.13.14",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "hf_endpoint": "https://hf-mirror.com",
+    "timestamp": "2026-10-21T13:58:16"
+  },
+  "summary": {
+    "chronos-bolt@0.5": {
+      "eol_abs_err": {
+        "n": 1,
+        "median": 32.85689220443915,
+        "mean": 32.85689220443915,
+        "q25": 32.85689220443915,
+        "q75": 32.85689220443915,
+        "iqr": 0.0
+      },
+      "eol_defined": {
+        "n": 4,
+        "median": 1.0,
+        "mean": 0.75,
+        "q25": 0.75,
+        "q75": 1.0,
+        "iqr": 0.25
+      },
+      "eol_hit": {
+        "n": 3,
+        "median": 0.0,
+        "mean": 0.3333333333333333,
+        "q25": 0.0,
+        "q75": 0.5,
+        "iqr": 0.5
+      },
+      "eol_pred": {
+        "n": 1,
+        "median": 110.18964404278864,
+        "mean": 110.18964404278864,
+        "q25": 110.18964404278864,
+        "q75": 110.18964404278864,
+        "iqr": 0.0
+      },
+      "eol_start_below": {
+        "n": 1,
+        "median": 1.0,
+        "mean": 1.0,
+        "q25": 1.0,
+        "q75": 1.0,
+        "iqr": 0.0
+      },
+      "eol_true": {
+        "n": 3,
+        "median": 106.0930399434374,
+        "mean": 102.71169396928808,
+        "q25": 91.71289589089345,
+        "q75": 115.40116503475735,
+        "iqr": 23.688269143863906
+      },
+      "mae_raw": {
+        "n": 4,
+        "median": 4.571387145577224,
+        "mean": 4.835681452845478,
+        "q25": 4.033937498806621,
+        "q75": 5.373131099616081,
+        "iqr": 1.3391936008094598
+      },
+      "mae_smooth": {
+        "n": 4,
+        "median": 4.538390263633702,
+        "mean": 4.794562310480202,
+        "q25": 3.998153755676343,
+        "q75": 5.334798818437561,
+        "iqr": 1.3366450627612183
+      },
+      "mape_raw": {
+        "n": 4,
+        "median": 6.515933022132959,
+        "mean": 6.674264769615756,
+        "q25": 5.8581570616442304,
+        "q75": 7.332040730104484,
+        "iqr": 1.4738836684602532
+      },
+      "n_context": {
+        "n": 4,
+        "median": 83.0,
+        "mean": 78.5,
+        "q25": 78.5,
+        "q75": 83.0,
+        "iqr": 4.5
+      },
+      "n_horizon": {
+        "n": 4,
+        "median": 83.5,
+        "mean": 79.25,
+        "q25": 78.75,
+        "q75": 84.0,
+        "iqr": 5.25
+      },
+      "rmse_raw": {
+        "n": 4,
+        "median": 5.4421968626628505,
+        "mean": 5.596443103252785,
+        "q25": 4.883956210951278,
+        "q75": 6.154683754964356,
+        "iqr": 1.270727544013078
+      },
+      "rmse_smooth": {
+        "n": 4,
+        "median": 5.412758324876455,
+        "mean": 5.554692431279106,
+        "q25": 4.828237261661746,
+        "q75": 6.1392134944938155,
+        "iqr": 1.3109762328320693
+      },
+      "rul_abs_err": {
+        "n": 1,
+        "median": 32.85689220443915,
+        "mean": 32.85689220443915,
+        "q25": 32.85689220443915,
+        "q75": 32.85689220443915,
+        "iqr": 0.0
+      }
+    }
+  }
+}

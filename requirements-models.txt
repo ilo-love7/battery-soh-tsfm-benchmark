@@ -1,0 +1,52 @@
+# 基础模型依赖（2026-10-20 实测可用的组合，装在本项目 venv 里）
+#
+# 关键前提：本机 huggingface.co 不通，全部走 hf-mirror.com：
+#   set HF_ENDPOINT=https://hf-mirror.com
+#   set HF_HUB_DISABLE_XET=1        （镜像不支持 xet，不关会中断下载）
+# 权重不要靠 from_pretrained 自动拉，用 hf download 预下到 shared/models/：
+#   hf download amazon/chronos-bolt-small        --local-dir shared/models/chronos-bolt-small
+#   hf download amazon/chronos-t5-small          --local-dir shared/models/chronos-t5-small
+#   hf download google/timesfm-2.5-200m-pytorch  --local-dir shared/models/timesfm-2.5-200m-pytorch
+#   hf download Salesforce/moirai-1.0-R-small    --local-dir shared/models/moirai-1.0-R-small
+# 代码里 resolve_model_ref() 会自动优先用本地目录。
+
+# ---- 已实测跑通（同一环境内共存，无冲突）：Python 3.13 / venv ----
+torch==2.14.1
+chronos-forecasting==2.3.2        # 自带 transformers 5.20.2 / accelerate 1.15.0
+timesfm==3.0.2                    # 2.5 版 API：TimesFM_2p5_200M_torch + ForecastConfig
+statsmodels==0.15.0               # ARIMA 基线
+
+# ---- Moirai（uni2ts）：必须单独 venv（Python 3.12）----
+# 为什么不能用 3.13：uni2ts 硬依赖 numpy~=1.26.0，numpy 1.26.4 没有 cp313 wheel，
+# pip 会去源码编译，而本机无 MSVC/gcc → metadata-generation-failed。
+#
+#   C:\Python312\python.exe -m venv venv-moirai
+#   venv-moirai\Scripts\python.exe -m pip install -i https://mirrors.aliyun.com/pypi/simple/ ^
+#       "numpy==1.26.4" pandas scipy torch
+#   venv-moirai\Scripts\python.exe -m pip install --no-deps uni2ts
+#   venv-moirai\Scripts\python.exe -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple ^
+#       lightning einops "huggingface_hub>=0.23" "gluonts==0.14.4" ^
+#       "jax==0.4.38" "jaxlib==0.4.38" "jaxtyping==0.2.36" hydra-core omegaconf ^
+#       safetensors "pyarrow==15.0.2"
+#
+# 版本钉死的理由（踩过）：
+#   - 直接 pip install uni2ts 会拉 jax → jaxlib 走代理 502 → 整笔事务回滚（torch 也装不上）
+#   - jax 最新版会把 numpy 顶到 2.x → 与 uni2ts 冲突；必须 jax 0.4.38 + jaxtyping 0.2.36
+#   - pyarrow 26 要求 numpy>=2；numpy 1.26 只能用 pyarrow 15.0.2
+#
+# ⚠️ Windows 专有坑：pandas/pyarrow 只要**先于** torch 导入，torch 就报
+#    OSError [WinError 1114] 动态链接库(DLL)初始化例程失败 (c10.dll)
+#    已在 run_benchmark.py 顶部按需预导入 torch 规避。
+#
+# 实测：uni2ts 2.0.0 + torch 2.14.1 + numpy 1.26.4 虽超出 uni2ts 声明范围
+# （要求 torch<2.5），但 Moirai 前向推理正常，MIT/NASA/CALCE 三库均跑通。
+
+# ---- Lag-Llama：版本最敏感，必须独立环境（与 Moirai 环境不可共存）----
+# git clone https://github.com/time-series-foundation-models/lag-llama
+# cd lag-llama && pip install -e .
+# pip install "gluonts[torch]==0.13.7"
+# 权重 lag-llama.ckpt 手动下到 shared/models/lag-llama/lag-llama.ckpt
+# git clone https://github.com/time-series-foundation-models/lag-llama
+# cd lag-llama && pip install -e .
+# pip install "gluonts[torch]==0.13.7"
+# 权重 lag-llama.ckpt 手动下到 shared/models/lag-llama/lag-llama.ckpt

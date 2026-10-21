@@ -1,0 +1,48 @@
+{
+  "k": 41,
+  "steps": 5,
+  "lr": 1e-05,
+  "batch": 16,
+  "seed": 42,
+  "ctx": 512,
+  "horizon": 64,
+  "stride": 16,
+  "base_model": "amazon/chronos-bolt-small",
+  "support_cells": [
+    "b1c1",
+    "b1c11",
+    "b1c15",
+    "b1c17",
+    "b1c19",
+    "b1c24",
+    "b1c26",
+    "b1c28",
+    "b1c3",
+    "b1c30",
+    "b1c32",
+    "b1c34",
+    "b1c36",
+    "b1c38",
+    "b1c40",
+    "b1c42",
+    "b1c44",
+    "b1c5",
+    "b1c7"
+  ],
+  "n_windows": 400,
+  "history": [
+    {
+      "step": 1,
+      "loss": 16.63609504699707,
+      "elapsed_sec": 0.9
+    },
+    {
+      "step": 5,
+      "loss": 10.088449478149414,
+      "elapsed_sec": 4.6
+    }
+  ],
+  "model_id": "amazon/chronos-bolt-small-ft41smoke",
+  "output_dir": "C:\\Users\\34648\\Desktop\\智诚时序基础模型项目\\shared\\models\\chronos-bolt-small-ft41smoke",
+  "timestamp": "2026-10-21T13:15:45"
+}

@@ -1,0 +1,150 @@
+{
+  "meta": {
+    "models": [
+      "timesfm"
+    ],
+    "dataset": "mit",
+    "setting": "zero",
+    "split": "test",
+    "start_fracs": [
+      0.5
+    ],
+    "chunk": 64,
+    "protocol": {
+      "start_frac": 0.5,
+      "start_frac_sensitivity": [
+        0.4,
+        0.5,
+        0.6
+      ],
+      "smooth_window": 11,
+      "smooth_order": 2,
+      "outlier_thresh": 0.03,
+      "soh_ref_points": 5,
+      "eol_threshold": 80.0,
+      "rolling_chunk": 64,
+      "seeds": [
+        42,
+        43,
+        44
+      ]
+    },
+    "n_cells": 43,
+    "n_tasks": 43,
+    "model_info": {
+      "timesfm": {
+        "name": "timesfm",
+        "max_context": 512,
+        "max_horizon": 128,
+        "supports_batch": true,
+        "resolved": "C:\\Users\\34648\\Desktop\\智诚时序基础模型项目\\shared\\models\\timesfm-2.5-200m-pytorch",
+        "checkpoint": "google/timesfm-2.5-200m-pytorch",
+        "api": "2.5",
+        "elapsed_sec": 67.5,
+        "n_ok": 43,
+        "n_err": 0,
+        "chunk_used": 64
+      }
+    },
+    "packages": {
+      "torch": "2.14.1",
+      "transformers": "5.20.2",
+      "chronos-forecasting": "2.3.2",
+      "timesfm": "3.0.2",
+      "uni2ts": "not-installed",
+      "gluonts": "not-installed",
+      "numpy": "2.5.4",
+      "pandas": "3.0.6",
+      "scipy": "1.18.1",
+      "statsmodels": "0.15.0"
+    },
+    "python": "3.13.14",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "hf_endpoint": "https://hf-mirror.com",
+    "timestamp": "2026-10-20T11:17:27"
+  },
+  "summary": {
+    "timesfm@0.5": {
+      "eol_defined": {
+        "n": 43,
+        "median": 1.0,
+        "mean": 1.0,
+        "q25": 1.0,
+        "q75": 1.0,
+        "iqr": 0.0
+      },
+      "eol_hit": {
+        "n": 43,
+        "median": 0.0,
+        "mean": 0.0,
+        "q25": 0.0,
+        "q75": 0.0,
+        "iqr": 0.0
+      },
+      "eol_true": {
+        "n": 43,
+        "median": 561.0,
+        "mean": 709.2790697674419,
+        "q25": 486.0,
+        "q75": 848.0,
+        "iqr": 362.0
+      },
+      "mae_raw": {
+        "n": 43,
+        "median": 4.840519925522515,
+        "mean": 4.688329171991547,
+        "q25": 3.888485622747222,
+        "q75": 5.321816800130016,
+        "iqr": 1.4333311773827937
+      },
+      "mae_smooth": {
+        "n": 43,
+        "median": 4.840332535189861,
+        "mean": 4.687965756906386,
+        "q25": 3.888106245104206,
+        "q75": 5.321549001771496,
+        "iqr": 1.43344275666729
+      },
+      "mape_raw": {
+        "n": 43,
+        "median": 5.566570246508742,
+        "mean": 5.435384207217627,
+        "q25": 4.401836927214569,
+        "q75": 6.231898598778725,
+        "iqr": 1.830061671564156
+      },
+      "n_context": {
+        "n": 43,
+        "median": 297.0,
+        "mean": 360.8139534883721,
+        "q25": 257.5,
+        "q75": 423.0,
+        "iqr": 165.5
+      },
+      "n_horizon": {
+        "n": 43,
+        "median": 298.0,
+        "mean": 361.2325581395349,
+        "q25": 258.5,
+        "q75": 423.0,
+        "iqr": 164.5
+      },
+      "rmse_raw": {
+        "n": 43,
+        "median": 6.948784082274229,
+        "mean": 6.809917739398007,
+        "q25": 5.838299120171525,
+        "q75": 8.037458315816785,
+        "iqr": 2.19915919564526
+      },
+      "rmse_smooth": {
+        "n": 43,
+        "median": 6.948751980803341,
+        "mean": 6.809754197310116,
+        "q25": 5.83824458388753,
+        "q75": 8.037379566457453,
+        "iqr": 2.199134982569923
+      }
+    }
+  }
+}
