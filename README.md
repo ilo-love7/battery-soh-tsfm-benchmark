@@ -44,14 +44,18 @@
 | 6 | 微调只迁移"**敢外推**"，不迁移"**该多陡**" | CALCE EOL 命中 0% → 88%，但起点已偏低的电池被外推到接近 0（单支 MAE 109.8） |
 | 7 | EOL 指标只在 NASA / CALCE 可用，且样本量小到**不足以支撑显著性结论**；NASA 只作方向性证据（排名随起点变化、种子 CV 30.6%，naive_linear 换整段拟合能从 6.11 降到 2.48） | NASA n=4（闸门后 3）、CALCE n=14（闸门后 8） |
 | 8 | 结论对起点与种子稳健：三个起点、三个额外种子下排名均无翻转（NASA 除外） | MIT/CALCE 种子 CV ≤ 8.7%；NASA 30.6% |
-| 9 | **区间宽度普遍只有误差量级的 4%–15%**，覆盖率因此塌到 9–22%；宽度补到位的组合立刻回到 76–94%，中间**没有过渡样本** | `MPIW/MAE < 1.0` 的 9 组 PICP 全在 8.8–22.2%；`≥ 1.5` 的 6 组全在 76.1–94.4%（ρ=0.83） |
+| 9 | **区间宽度普遍只有误差量级的 4%–15%**，覆盖率因此塌到 9–22%；反过来，`MPIW/MAE ≥ 1.5` 的 6 组覆盖率都在 76–94%，中间**没有过渡样本** | `MPIW/MAE < 1.0` 的 9 组 PICP 全在 8.8–22.2%；`≥ 1.5` 的 6 组全在 76.1–94.4%（ρ=0.83） |
 | 10 | v1 的 EOL 命中率**会把失败记成满分**：lag-llama 在 MIT 上 100% 命中，其实比真值早 197 个循环就跌破 80% | 过冲 −197 循环、RUL 相对误差 0.71；改用三量后可排序 |
 | 11 | **2 个标量的校准头 ≈ 1 支电池上的全量微调**，且 EOL 命中率反超所有微调档位 | MIT 4.110 → 3.256（−20.8%，微调 1 支为 3.241）；EOL 0% → 47% vs 微调 5–37% |
+| 12 | 上一条的横截面规律**是相关、不是因果**：只缩放区间半宽，MIT 的 chronos-bolt 拉宽 15 倍覆盖率只到 43%，要 80% 得 113 倍（CRPS +115%）。**「太宽」倒是单标量能修好** | 9/15 组需 38–2000 倍宽度、CRPS 中位涨 465%；lag-llama@MIT 收窄 0.62× 即 80%、CRPS −25% |
+| 13 | **换模型的粒度是库、不是 cell**：拐点能只从上下文估出来，但「逐 cell 选模型」的收益天花板只有 1.7% / 0% / 20%，留一库路由 6/6 都没跑赢「两者取优」 | MIT 天花板 2.98 vs 最优单模型 3.03；CALCE 6.04 → 4.82，但留一库只能到 7.96 |
 
 > 全部数字见 [`04_文档报告/结果表.md`](04_文档报告/结果表.md)、
 > 区间与 p 值见 [`03_实验结果/显著性检验.md`](03_实验结果/显著性检验.md)、
 > 概率口径与 EOL 重设计见 [`04_文档报告/EOL重设计.md`](04_文档报告/EOL重设计.md)、
-> 校准头三方对比见 [`04_文档报告/校准头对比.md`](04_文档报告/校准头对比.md)。
+> 校准头三方对比见 [`04_文档报告/校准头对比.md`](04_文档报告/校准头对比.md)、
+> 宽度干预与在线代理见 [`04_文档报告/区间宽度校准.md`](04_文档报告/区间宽度校准.md)
+> 与 [`04_文档报告/在线代理.md`](04_文档报告/在线代理.md)。
 
 ---
 
@@ -347,6 +351,37 @@ python 01_源代码/analyze_calibration.py
 
 ---
 
+## 在线代理：拐点能从上下文估出来，模型选择不能
+
+`knee_ratio` / `pred_ratio` / `w` 全都需要真值，只能事后解释。既然离线常数不可迁移，
+就只能问：**这些量能不能只从上下文算出来？** 用 9 个纯上下文特征
+（上下文累计衰减、全段/近段斜率外推降幅、曲率、线性拟合 R²、残差噪声、二阶差分自相关、
+上下文长度），在 61 个 cell 上做 Spearman + **留一库**：
+
+| 问题 | 能否只从上下文估 | 证据 |
+|---|---|---|
+| 拐点 `knee_ratio` | **能** | `drop_ctx` 合并 ρ = **−0.96**，MIT 库内 ρ = **−0.99** |
+| 该库是「线性」还是「有拐点」 | **能** | 三库 `drop_ctx` 中位 1.4% / 16.8% / 15.7%，`knee_ratio` 中位 8.9 / 0.65 / 1.65 |
+| 该信谁（逐 cell 选模型） | **不能** | 库内 ρ 最高 0.61；留一库路由 **6/6** 没跑赢「两者取优」 |
+| 逐 cell 区间宽度 `w` | **只能估量级** | 最强特征其实是 horizon 长度（13/15）；覆盖率仍偏 10–20pp |
+
+关键数字：**逐 cell 选优的天花板本身就很小**——MIT 最优单模型 3.03，6 候选完美选优只有
+2.98（**−1.7%**）；NASA 是 0%；只有 CALCE 有 20% 空间（6.04 → 4.82）。而留一库学到的规则
+在 CALCE 上只能做到 7.96，还不如直接线性外推的 6.04。
+
+所以 §9.6 设想的「按上下文曲率路由 / 加权集成」在本项目的数据上**没有可赚的钱**：
+模型优劣是**库级**现象，不是 cell 级现象。可部署的落点是：拿到一个新库，先算上下文的
+`drop_ctx` 与 `slope_all`——「已经掉了 15% 以上、后面基本线性」的库（CALCE / NASA 型）
+用线性外推，「只掉了 1–2%、拐点还在前方」的库（MIT 型）用基础模型。
+
+```bash
+python 01_源代码/online_proxy.py     # 零推理，只读已落盘的 predictions / quantiles
+```
+
+完整表见 [`04_文档报告/在线代理.md`](04_文档报告/在线代理.md)。
+
+---
+
 ## 快速开始
 
 ### 0. 环境
@@ -497,6 +532,7 @@ bash scripts/run_matrix.sh report   # 纯汇总：report / 显著性 / 机制 / 
 ├── analyze_eol2.py          EOL 重设计汇总 → 汇总_EOL重设计.csv + EOL重设计.md
 ├── analyze_calibration.py   零样本 / 2 参数 / 微调三方对比 → 校准头对比.md
 ├── calibrate_width.py       区间宽度干预（绕中位数缩放半宽，零模型重跑）→ 区间宽度校准.md
+├── online_proxy.py          §9.5 在线代理：9 个上下文特征 → 拐点 / 模型选择 / 宽度（零推理）
 ├── analyze_seeds.py         多种子方差与排名翻转检查 → 种子方差.md
 ├── diag_curvature.py        knee_ratio（数据侧衰减加速比）
 ├── ablate_naive_linear.py   naive_linear 拟合窗口消融（⌊n/2⌋ vs 整段）
@@ -507,7 +543,8 @@ bash scripts/run_matrix.sh report   # 纯汇总：report / 显著性 / 机制 / 
 03_实验结果/                  每次运行的 per_cell / summary / predictions + 汇总与检验
   ├── prob/                  概率口径矩阵（CRPS/PICP/MPIW + EOL 重设计），二级目录不进主表
   ├── calib/                 校准头参数与网格曲面（calibration_head.json / grid_surface.csv）
-  └── width_calib/           区间宽度扫描（width_calibration.csv + 逐组合曲线 + 跨库迁移）
+  ├── width_calib/           区间宽度扫描（width_calibration.csv + 逐组合曲线 + 跨库迁移）
+  └── online_proxy/          逐 cell 上下文特征 / 逐 cell w_cov / Spearman 表 / 路由 / 留一库
 04_文档报告/                  短文初稿、方案、执行记录、结果表、figures、_history（历史材料）
 scripts/                      setup_env.{sh,bat} + run_matrix.sh + run_prob.sh + run_cal.sh
 requirements-core.txt         核心依赖（基线所需）
@@ -519,20 +556,22 @@ requirements-models.txt       模型依赖（已实测可共存的版本组合 +
 ## 复现性：我们踩过并修掉的坑
 
 > **已验证（三次，均在干净克隆上）**：把仓库 `git clone` 到干净目录，不带 `data/`、
-> 不带 `local_paths.py`，只跑 `bash scripts/run_matrix.sh report`（16 步：
+> 不带 `local_paths.py`，只跑 `bash scripts/run_matrix.sh report`（17 步：
 > 缓存指纹回归测试 + `report.py` / `stats_significance.py` / `analyze_shrinkage.py` /
 > `analyze_seeds.py` / `analyze_eol2.py` / `analyze_calibration.py` / `calibrate_width.py` /
-> `diag_curvature.py` × 3 / `ablate_naive_linear.py` / `plot_fewshot.py` / `figures.py` × 三库），
+> `online_proxy.py` / `diag_curvature.py` × 3 / `ablate_naive_linear.py` /
+> `plot_fewshot.py` / `figures.py` × 三库），
 > **14 张图 MD5 与原图逐位一致**，
 > 7 个汇总产物内容一致（`.md` 仅剩 `core.autocrlf` 造成的行尾差异，`git diff` 为空），
 > 缓存指纹回归测试 16/16 通过。
 > 也就是说提交的结果文件与图完全对应，中间没有手工改数，且这一致性是跨机器成立的。
 >
-> 后加入的三步（`analyze_eol2` / `analyze_calibration` / `calibrate_width`）不产图，
-> 只读已提交的 `03_实验结果/prob`、`calib`，所以上面的图一致性与它们独立：
-> `calibrate_width.py` 本地连跑两轮 + 干净克隆重跑一次，17 个产物 CSV 的 MD5 逐位相同
-> （克隆里需自带 CALCE 解析缓存 `01_源代码/data/processed/calce_capacity_v3.parquet`，
-> 否则会先花 10–20 分钟重解析 27 个 zip）。
+> 后加入的四步（`analyze_eol2` / `analyze_calibration` / `calibrate_width` /
+> `online_proxy`）不产图，只读已提交的 `03_实验结果/prob`、`calib` 与
+> `predictions_*.npz`，所以上面的图一致性与它们独立：`calibrate_width.py` 连跑两轮 +
+> 干净克隆重跑一次，17 个产物 CSV 的 MD5 逐位相同（克隆里需自带 CALCE 解析缓存
+> `01_源代码/data/processed/calce_capacity_v3.parquet`，否则会先花 10–20 分钟重解析
+> 27 个 zip）；`online_proxy.py` 连跑两轮，5 个 CSV + 1 份 `.md` 的 MD5 逐位相同。
 
 这部分是本项目最有价值的部分之一——**每一个坑都会让数字悄悄错掉，而且不报错**：
 

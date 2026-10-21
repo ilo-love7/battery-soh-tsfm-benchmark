@@ -151,8 +151,9 @@ if has report; then
     echo ">>> $*" | tee -a "$LOG"
     ( cd "$ROOT/01_源代码" && "$PY_CORE" "$@" ) 2>&1 | tee -a "$LOG"
   }
-  # 无第三方依赖的回归测试（锁死缓存指纹的四个坑），失败不影响后续汇总
+  # 无第三方依赖的回归测试（锁死缓存指纹的四个坑 + 在线代理的特征口径），失败不影响后续汇总
   an tests/test_cache_fingerprint.py
+  an tests/test_online_proxy.py
   an report.py
   an stats_significance.py
   an analyze_shrinkage.py
@@ -165,6 +166,9 @@ if has report; then
   # 区间宽度干预（§10.8）：绕中位数缩放半宽，零模型重跑，只读 prob/*.npz。
   # 产物是 03_实验结果/width_calib/ 与 04_文档报告/区间宽度校准.md。
   an calibrate_width.py
+  # 在线代理（§9.5）：只用上下文特征 + 已落盘预测，零推理。产物在
+  # 03_实验结果/online_proxy/ 与 04_文档报告/在线代理.md。
+  an online_proxy.py
   an diag_curvature.py --dataset mit --split test
   an diag_curvature.py --dataset nasa
   an diag_curvature.py --dataset calce
