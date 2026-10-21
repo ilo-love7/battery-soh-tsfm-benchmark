@@ -530,7 +530,9 @@ requirements-models.txt       模型依赖（已实测可共存的版本组合 +
 >
 > 后加入的三步（`analyze_eol2` / `analyze_calibration` / `calibrate_width`）不产图，
 > 只读已提交的 `03_实验结果/prob`、`calib`，所以上面的图一致性与它们独立：
-> `calibrate_width.py` 本地连跑两轮，17 个产物 CSV 的 MD5 逐位相同。
+> `calibrate_width.py` 本地连跑两轮 + 干净克隆重跑一次，17 个产物 CSV 的 MD5 逐位相同
+> （克隆里需自带 CALCE 解析缓存 `01_源代码/data/processed/calce_capacity_v3.parquet`，
+> 否则会先花 10–20 分钟重解析 27 个 zip）。
 
 这部分是本项目最有价值的部分之一——**每一个坑都会让数字悄悄错掉，而且不报错**：
 
