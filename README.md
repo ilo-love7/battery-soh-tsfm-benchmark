@@ -21,9 +21,10 @@
 - [主要结论](#主要结论)
 - [基准设计](#基准设计)
 - [结果](#结果)
-- [概率口径：区间覆盖率只有 2–22%](#概率口径区间覆盖率只有-222)
+- [概率口径：覆盖率几乎只由「区间宽度 / 误差量级」决定](#概率口径覆盖率几乎只由区间宽度--误差量级决定)
 - [机制：不是"更懂电池"，而是"敢不敢外推"](#机制不是更懂电池而是敢不敢外推)
 - [2 个参数的校准头](#2-个参数的校准头)
+- [在线代理：拐点能从上下文估出来，模型选择不能](#在线代理拐点能从上下文估出来模型选择不能)
 - [快速开始](#快速开始)
 - [目录结构](#目录结构)
 - [复现性：我们踩过并修掉的坑](#复现性我们踩过并修掉的坑)
@@ -49,13 +50,15 @@
 | 11 | **2 个标量的校准头 ≈ 1 支电池上的全量微调**，且 EOL 命中率反超所有微调档位 | MIT 4.110 → 3.256（−20.8%，微调 1 支为 3.241）；EOL 0% → 47% vs 微调 5–37% |
 | 12 | 上一条的横截面规律**是相关、不是因果**：只缩放区间半宽，MIT 的 chronos-bolt 拉宽 15 倍覆盖率只到 43%，要 80% 得 113 倍（CRPS +115%）。**「太宽」倒是单标量能修好** | 9/15 组需 38–2000 倍宽度、CRPS 中位涨 465%；lag-llama@MIT 收窄 0.62× 即 80%、CRPS −25% |
 | 13 | **换模型的粒度是库、不是 cell**：拐点能只从上下文估出来，但「逐 cell 选模型」的收益天花板只有 1.7% / 0% / 20%，留一库路由 6/6 都没跑赢「两者取优」 | MIT 天花板 2.98 vs 最优单模型 3.03；CALCE 6.04 → 4.82，但留一库只能到 7.96 |
+| 14 | **在线估 `w` 三条路全关**：上下文特征回归 19pp 最好但只到量级；conformal 上下文自测可部署口径 38pp 更差；乘事后修正因子后 14.9pp，仍**输给不用自测的库常数 11.4pp**（净收益 −3.5pp） | 118 个 cell：65pp（不校准）→ 38pp（自测）→ 14.9pp（+`k`）vs 11.4pp（常数基线） |
 
 > 全部数字见 [`04_文档报告/结果表.md`](04_文档报告/结果表.md)、
 > 区间与 p 值见 [`03_实验结果/显著性检验.md`](03_实验结果/显著性检验.md)、
 > 概率口径与 EOL 重设计见 [`04_文档报告/EOL重设计.md`](04_文档报告/EOL重设计.md)、
 > 校准头三方对比见 [`04_文档报告/校准头对比.md`](04_文档报告/校准头对比.md)、
 > 宽度干预与在线代理见 [`04_文档报告/区间宽度校准.md`](04_文档报告/区间宽度校准.md)
-> 与 [`04_文档报告/在线代理.md`](04_文档报告/在线代理.md)。
+> 与 [`04_文档报告/在线代理.md`](04_文档报告/在线代理.md)；
+> 上下文内自测（§9.5 最后一条路）见 [`04_文档报告/上下文自测.md`](04_文档报告/上下文自测.md)。
 
 ---
 
@@ -380,6 +383,42 @@ python 01_源代码/online_proxy.py     # 零推理，只读已落盘的 predict
 
 完整表见 [`04_文档报告/在线代理.md`](04_文档报告/在线代理.md)。
 
+### 最后一条路也关掉了：上下文内自测
+
+特征回归只能估量级，那就还剩一条理论上最有希望的路——**conformal 式的上下文内自测**：
+把上下文切两段，前段当输入、后段当已知真值，跑同一个模型，在伪任务上求出 `w_hat` 再搬到真实任务。
+它天然对齐了「同一个模型、同一条序列、同一种误差结构」。
+
+结果是**负的**，而且失败的方式很干净：
+
+- **前提就不成立**。起点 0.5 时上下文长度 T **恰好等于** horizon 长度 H（50/50 切分），
+  自测要一段长度 H 的已知真值，留给模型的输入就是 **0 点**。伪 horizon 只能是 `H/2`。
+- **而 `w` 对 horizon 极度敏感**：horizon 减半后所需宽度只剩 **11.7%**。
+  实测 `w_hat / w_oracle` 的中位是 **0.0729** —— 和这个 11.7% 几乎重合。
+  也就是说，`w_hat` 测的是「horizon 被截短了多少」，不是「这个模型的误差有多大」。
+- **加个事后修正因子能救，但那等于自测没做**。乘上 `k = 8.58`（从真实分位数反解）后
+  覆盖率偏离从 38pp 降到 14.9pp —— 可一个**根本不用自测**的库常数花同样的作弊预算能做到
+  **11.4pp**。净收益 **−3.5pp**。
+
+| 方案 | 需要真值？ | 覆盖率偏离（118 cell 中位） |
+|---|---|---|
+| 不校准 `w=1` | 否 | 65.1pp |
+| **自测 `w_hat`** | **否** | **38.2pp** |
+| 自测 × `k` | 是 | 14.9pp |
+| **库常数基线** | 是 | **11.4pp** |
+| oracle 上界 | 是 | 0.9pp |
+
+还有一个反直觉的细节：**自测会主动破坏本来就好的模型**。NASA 的 timesfm 不校准时
+PICP 已经是 76.2%，自测把它「修正」到 48.8%——因为伪任务（horizon 只有 19 点）估出的
+`w_hat` 只有 0.8，而这个校准器只会单向调整。
+
+```bash
+python 01_源代码/conformal_w.py    # 全量伪任务推理，约 3 分钟
+python 01_源代码/conformal_w.py --skip-inference   # 只重建文档，读已提交产物
+```
+
+完整推导见 [`04_文档报告/上下文自测.md`](04_文档报告/上下文自测.md)。
+
 ---
 
 ## 快速开始
@@ -497,13 +536,16 @@ bash scripts/run_matrix.sh all     # 推理部分：mit / nasa / calce / sens / 
 bash scripts/run_matrix.sh extra    # few-shot 微调（ft1/ft4/ft8/ftall）+ 微调评测
                                      # + 跨库迁移 + ablate_naive_linear.py
 bash scripts/run_matrix.sh report   # 纯汇总：report / 显著性 / 机制 / 种子方差 / 消融
-                                     # + plot_fewshot + figures × 三库
+                                     # + EOL重设计 / 校准头对比 / 区间宽度干预
+                                     # + 在线代理 / 上下文自测 / 上下文范围 / plot_fewshot / figures × 三库
 ```
 
 `extra` 依赖已跑完的 `mit` / `calce` / `nasa` 推理格；`report` 只读 `03_实验结果/`,
-是**从干净克隆复现图与汇总产物**的标准入口（已在两次干净克隆上验证逐位一致）。
-它也会跑 `tests/test_cache_fingerprint.py`（16 项断言，无第三方依赖），
-把 CALCE 缓存指纹的四个坑锁死。
+是**从干净克隆复现图与汇总产物**的标准入口（已在三次干净克隆上验证逐位一致）。
+它也会跑三项无第三方依赖的回归测试：`tests/test_cache_fingerprint.py`（16 项，
+锁死 CALCE 缓存指纹的四个坑）、`tests/test_online_proxy.py`（36 项，
+锁死在线代理的特征口径——尤其是 `slope_*` 的 horizon 归一化）与
+`tests/test_conformal_w.py`（20 项，锁死伪任务的切分与 `T_MIN` 兜底）。
 
 输出在 `03_实验结果/<dataset>-<setting>-<models>/`：`per_cell_*.csv`、`summary.json`
 （含协议参数、包版本、权重路径、耗时、随机种子）、`predictions_*.npz`。
@@ -516,7 +558,7 @@ bash scripts/run_matrix.sh report   # 纯汇总：report / 显著性 / 机制 / 
 01_源代码/
 ├── configs/config.py        路径解析 + 协议参数 + 模型注册表 + HF 镜像（唯一真源）
 ├── data/loaders.py          MIT / NASA / CALCE 真实加载器（CALCE 带来源指纹的 parquet 缓存）
-├── tests/                    无第三方依赖的回归测试（python tests/test_cache_fingerprint.py）
+├── tests/                    无第三方依赖的回归测试（缓存指纹 / 在线代理 / 伪任务切分，共 72 项）
 ├── data/protocol.py         清洗 / SOH 归一 / 相对起点切分 / 平滑参考
 ├── adapters/base.py         Forecaster 接口 + 批量滚动递归 + 分位数接口 + 分位数穿越修复
 ├── adapters/                chronos / timesfm / lagllama / moirai（各自独立种子推进）
@@ -534,18 +576,25 @@ bash scripts/run_matrix.sh report   # 纯汇总：report / 显著性 / 机制 / 
 ├── calibrate_width.py       区间宽度干预（绕中位数缩放半宽，零模型重跑）→ 区间宽度校准.md
 ├── online_proxy.py          §9.5 在线代理：9 个上下文特征 → 拐点 / 模型选择 / 宽度（零推理）
 ├── diag_context_range.py    §9.4 可行性核查：上下文长度分布 + 夹到 512 的口径影响（零推理）
+├── conformal_w.py           §9.5 最后一条路：上下文内自测（conformal 式伪任务）→ 上下文自测.md
 ├── analyze_seeds.py         多种子方差与排名翻转检查 → 种子方差.md
 ├── diag_curvature.py        knee_ratio（数据侧衰减加速比）
 ├── ablate_naive_linear.py   naive_linear 拟合窗口消融（⌊n/2⌋ vs 整段）
 ├── fewshot_finetune.py      Chronos-Bolt 真梯度微调（k 支电池）+ 跨库迁移
 ├── plot_fewshot.py          fig6：MAE / EOL 随**实际**支持集大小的变化
-└── figures.py               轨迹图 / 箱线图 / EOL 命中率 / 起点敏感性
+├── figures.py               轨迹图 / 箱线图 / EOL 命中率 / 起点敏感性
+└── 一次性诊断（不进 report 链）
+    ├── backfill_ctx.py      给历史 predictions_*.npz 回填 `key|ctx`（免重跑推理）
+    ├── diag_calce_files.py  逐个 zip 文件判断"是不是容量老化测试"
+    ├── diag_calce_depth.py  按 Vmax/Vmin 判"真正全深度"的循环数（27 → 14 的依据）
+    └── diag_calce_cells.py  按放电量/额定容量判全深度（第二条独立依据）
 02_数据集链接/                三个数据集的来源、字段与获取方式（只写路径，不存数据）
 03_实验结果/                  每次运行的 per_cell / summary / predictions + 汇总与检验
   ├── prob/                  概率口径矩阵（CRPS/PICP/MPIW + EOL 重设计），二级目录不进主表
   ├── calib/                 校准头参数与网格曲面（calibration_head.json / grid_surface.csv）
   ├── width_calib/           区间宽度扫描（width_calibration.csv + 逐组合曲线 + 跨库迁移）
-  └── online_proxy/          逐 cell 上下文特征 / 逐 cell w_cov / Spearman 表 / 路由 / 留一库
+  ├── online_proxy/          逐 cell 上下文特征 / 逐 cell w_cov / Spearman 表 / 路由 / 留一库
+  └── conformal_w/           上下文内自测（horizon 不变性 + 逐 cell w_hat / w_oracle / 三种 PICP）
 04_文档报告/                  短文初稿、方案、执行记录、结果表、figures、_history（历史材料）
 scripts/                      setup_env.{sh,bat} + run_matrix.sh + run_prob.sh + run_cal.sh
 requirements-core.txt         核心依赖（基线所需）
@@ -557,24 +606,26 @@ requirements-models.txt       模型依赖（已实测可共存的版本组合 +
 ## 复现性：我们踩过并修掉的坑
 
 > **已验证（三次，均在干净克隆上）**：把仓库 `git clone` 到干净目录，不带 `data/`、
-> 不带 `local_paths.py`，只跑 `bash scripts/run_matrix.sh report`（19 步：
-> 缓存指纹 + 在线代理两项回归测试 + `report.py` / `stats_significance.py` /
+> 不带 `local_paths.py`，只跑 `bash scripts/run_matrix.sh report`（21 步：
+> 三项回归测试 + `report.py` / `stats_significance.py` /
 > `analyze_shrinkage.py` / `analyze_seeds.py` / `analyze_eol2.py` /
 > `analyze_calibration.py` / `calibrate_width.py` / `online_proxy.py` /
-> `diag_context_range.py` / `diag_curvature.py` × 3 / `ablate_naive_linear.py` /
+> `conformal_w.py --skip-inference` / `diag_context_range.py` /
+> `diag_curvature.py` × 3 / `ablate_naive_linear.py` /
 > `plot_fewshot.py` / `figures.py` × 三库），
 > **14 张图 MD5 与原图逐位一致**，
 > 7 个汇总产物内容一致（`.md` 仅剩 `core.autocrlf` 造成的行尾差异，`git diff` 为空），
 > 缓存指纹回归测试 16/16 通过。
 > 也就是说提交的结果文件与图完全对应，中间没有手工改数，且这一致性是跨机器成立的。
 >
-> 后加入的五步（`analyze_eol2` / `analyze_calibration` / `calibrate_width` /
-> `online_proxy` / `diag_context_range`）不产图，只读已提交的 `03_实验结果/prob`、
-> `calib` 与 `predictions_*.npz`，所以上面的图一致性与它们独立：
+> 后加入的六步（`analyze_eol2` / `analyze_calibration` / `calibrate_width` /
+> `online_proxy` / `conformal_w --skip-inference` / `diag_context_range`）不产图，
+> 只读已提交的 `03_实验结果/prob`、`calib` 与 `predictions_*.npz`，
+> 所以上面的图一致性与它们独立：
 > `calibrate_width.py` 连跑两轮 + 干净克隆重跑一次，17 个产物 CSV 的 MD5 逐位相同
 > （克隆里需自带 CALCE 解析缓存 `01_源代码/data/processed/calce_capacity_v3.parquet`，
-> 否则会先花 10–20 分钟重解析 27 个 zip）；`online_proxy.py` 与
-> `diag_context_range.py` 各连跑两轮，产物 MD5 逐位相同。
+> 否则会先花 10–20 分钟重解析 27 个 zip）；`online_proxy.py`、`diag_context_range.py`
+> 与 `conformal_w.py --skip-inference` 各连跑两轮，产物 MD5 逐位相同。
 
 这部分是本项目最有价值的部分之一——**每一个坑都会让数字悄悄错掉，而且不报错**：
 
@@ -620,7 +671,9 @@ requirements-models.txt       模型依赖（已实测可共存的版本组合 +
    上下文的 `drop_ctx` 估出来（ρ = −0.96），但模型选择与逐 cell 区间宽度都估不出来。
 7. **校准头的 `s` 不能跨库迁移**：在 MIT 上拟合的 `s = 1.65` 搬到 CALCE 是负迁移（+1.2%）。
    `s` 学的是"这个数据分布该放大多少"，不是模型属性，必须在目标分布上重新拟合。
-   区间宽度倍数 `w` 同样不可迁移，而用上下文回归只能把覆盖率误差从 42pp 压到 19pp。
+   区间宽度倍数 `w` 同样不可迁移，而用上下文回归只能把覆盖率误差从 42pp 压到 19pp；
+   conformal 式的上下文内自测更差（可部署口径 38pp），加事后修正因子也赢不过一个常数基线
+   （见局限第 11 条）。
 8. **概率口径仍远未校准**：即使经过校准头，PICP 也只有 25%（MIT）/ 41%（NASA）/ 17%（CALCE），
    离名义 80% 还很远。本基准只能指出"过度自信"这个方向，没有解决它。
 9. **"长上下文"这个因子在本数据上不可测**：183 个「cell×起点」组合里没有一个的上下文
@@ -630,6 +683,11 @@ requirements-models.txt       模型依赖（已实测可共存的版本组合 +
 10. **逐 cell 选模型没有空间**：6 个候选的逐 cell 完美选优相对最优单模型只改善
     1.7%（MIT）/ 0%（NASA）/ 20%（CALCE），且留一库学不到可迁移的规则。
     集成/路由类方法的收益上限就在这里。
+11. **在线估区间宽度 `w` 在本协议下做不到**：特征回归只能到 19pp（留一库），
+    conformal 上下文自测可部署口径反而更差（38pp），加事后修正因子仍输给一个常数基线。
+    根因是 50/50 切分让「匹配 horizon 的自测」在数学上不存在，而 `w` 对 horizon 极度敏感
+    （horizon 减半 ⇒ `w` 只剩 11.7%）。要解决只能改协议（更晚的起点），
+    那会改变所有已发表数字的口径（见 [`04_文档报告/上下文自测.md`](04_文档报告/上下文自测.md)）。
 
 ---
 

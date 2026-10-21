@@ -154,6 +154,7 @@ if has report; then
   # 无第三方依赖的回归测试（锁死缓存指纹的四个坑 + 在线代理的特征口径），失败不影响后续汇总
   an tests/test_cache_fingerprint.py
   an tests/test_online_proxy.py
+  an tests/test_conformal_w.py
   an report.py
   an stats_significance.py
   an analyze_shrinkage.py
@@ -169,6 +170,10 @@ if has report; then
   # 在线代理（§9.5）：只用上下文特征 + 已落盘预测，零推理。产物在
   # 03_实验结果/online_proxy/ 与 04_文档报告/在线代理.md。
   an online_proxy.py
+  # 上下文内自测（§9.5 最后一条路）：report 段只重建文档，读已提交的
+  # per_cell_all.csv + 已落盘分位数，不重跑伪任务推理（推理用
+  # `python 01_源代码/conformal_w.py` 单独跑一次即可，产物已在仓库里）。
+  an conformal_w.py --skip-inference
   # 上下文范围核查（§9.4 可行性）：零推理，只读原始数据。产物在
   # 03_实验结果/context_range.csv + context_truncation.csv + 04_文档报告/上下文范围.md。
   an diag_context_range.py
