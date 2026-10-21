@@ -23,7 +23,6 @@
 - [结果](#结果)
 - [机制：不是"更懂电池"，而是"敢不敢外推"](#机制不是更懂电池而是敢不敢外推)
 - [快速开始](#快速开始)
-- [数据与权重](#数据与权重)
 - [目录结构](#目录结构)
 - [复现性：我们踩过并修掉的坑](#复现性我们踩过并修掉的坑)
 - [局限](#局限)
@@ -218,7 +217,7 @@ bash scripts/setup_env.sh          # macOS / Linux / Git-Bash
 - `venv-moirai`（Python **3.12**）：Moirai / Lag-Llama —— uni2ts 硬依赖 `numpy~=1.26`，
   没有 cp313 wheel，与 `torch 2.14 + chronos-forecasting` 无法共存于同一 3.13 环境。
 
-CPU 即可，无需 GPU。全部实验在一台无独显的 Windows 机器上跑完。
+CPU 即可，无需 GPU。本文所有数字都是在 CPU（Windows 11 / torch 2.14.1）上跑出来的。
 
 ### 1. 数据
 
