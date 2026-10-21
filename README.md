@@ -375,7 +375,7 @@ requirements-models.txt       模型依赖（已实测可共存的版本组合 +
 
 ## 引用与许可
 
-代码 MIT，见 [`LICENSE`](LICENSE)。**数据与权重不随仓库分发**，请按各自许可从原始来源获取。
+代码 MIT，见 [`LICENSE`](LICENSE)。**数据与权重不随仓库分发**，分发范围与获取方式见 [`NOTICE.md`](NOTICE.md)。
 
 如果这个基准对你有帮助：
 

@@ -1,6 +1,6 @@
 MIT License
 
-Copyright (c) 2026 智诚时序基础模型项目 (Zhicheng Time-Series Foundation Model Benchmark)
+Copyright (c) 2026 ilo-love7
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -19,11 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
--------------------------------------------------------------------------------
-Note on data and model weights
--------------------------------------------------------------------------------
-This repository contains code and evaluation results only. It does NOT
-redistribute the MIT-Stanford, NASA PCoE or CALCE datasets, nor any pretrained
-model weights. Those are governed by their own licenses and terms of use;
-please obtain them from the original sources listed in 02_数据集链接/.
