@@ -25,6 +25,8 @@ from typing import Dict, List, Optional
 import numpy as np
 import pandas as pd
 
+from configs.config import check_dataset  # noqa: E402  （config 不依赖 data，无循环导入）
+
 
 # ---------------------------------------------------------------- MIT
 def load_mit(cells_path: Path, cycles_path: Path,
@@ -514,6 +516,9 @@ def _filter_calce(out: Dict[str, pd.DataFrame], min_fade: float,
 def load_dataset(name: str, cfg: dict, split: Optional[str] = None,
                  with_meta: bool = False):
     name = name.lower()
+    # 先做存在性检查：缺数据时给"该设哪个环境变量"的可读报错，
+    # 而不是一路抛到 pandas 的 FileNotFoundError（干净克隆上必现）。
+    check_dataset(name, cfg)
     if name == "mit":
         c = cfg["mit"]
         return load_mit(c["cells"], c["cycles"], split=split, with_meta=with_meta)

@@ -151,6 +151,8 @@ if has report; then
     echo ">>> $*" | tee -a "$LOG"
     ( cd "$ROOT/01_源代码" && "$PY_CORE" "$@" ) 2>&1 | tee -a "$LOG"
   }
+  # 无第三方依赖的回归测试（锁死缓存指纹的四个坑），失败不影响后续汇总
+  an tests/test_cache_fingerprint.py
   an report.py
   an stats_significance.py
   an analyze_shrinkage.py

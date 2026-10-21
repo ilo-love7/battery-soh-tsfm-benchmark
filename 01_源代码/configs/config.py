@@ -19,6 +19,7 @@
 """
 import os
 from pathlib import Path
+from typing import Optional
 
 # ---- 项目根 ----
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -94,12 +95,17 @@ _ENV_HINT = {
 }
 
 
-def check_dataset(dataset: str) -> None:
-    """确认该数据集的必需路径存在；不存在就抛出带修复提示的错误。"""
-    if dataset not in DATASETS:
-        raise SystemExit(f"未知数据集 {dataset!r}，可选：{list(DATASETS)}")
+def check_dataset(dataset: str, cfg: Optional[dict] = None) -> None:
+    """确认该数据集的必需路径存在；不存在就抛出带修复提示的错误。
+
+    `cfg` 默认用模块级 `DATASETS`；`load_dataset()` 会把调用方传入的那份配置
+    显式传进来，避免"检查的是 A、加载的是 B"。
+    """
+    table = DATASETS if cfg is None else cfg
+    if dataset not in table:
+        raise SystemExit(f"未知数据集 {dataset!r}，可选：{list(table)}")
     for key in _REQUIRED[dataset]:
-        p = Path(DATASETS[dataset][key])
+        p = Path(table[dataset][key])
         if not p.exists():
             var = _ENV_HINT.get((dataset, key), key.upper())
             raise SystemExit(

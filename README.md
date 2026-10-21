@@ -315,6 +315,8 @@ bash scripts/run_matrix.sh report   # 纯汇总：report / 显著性 / 机制 / 
 
 `extra` 依赖已跑完的 `mit` / `calce` / `nasa` 推理格；`report` 只读 `03_实验结果/`,
 是**从干净克隆复现图与汇总产物**的标准入口（已在两次干净克隆上验证逐位一致）。
+它也会跑 `tests/test_cache_fingerprint.py`（16 项断言，无第三方依赖），
+把 CALCE 缓存指纹的四个坑锁死。
 
 输出在 `03_实验结果/<dataset>-<setting>-<models>/`：`per_cell_*.csv`、`summary.json`
 （含协议参数、包版本、权重路径、耗时、随机种子）、`predictions_*.npz`。
@@ -327,6 +329,7 @@ bash scripts/run_matrix.sh report   # 纯汇总：report / 显著性 / 机制 / 
 01_源代码/
 ├── configs/config.py        路径解析 + 协议参数 + 模型注册表 + HF 镜像（唯一真源）
 ├── data/loaders.py          MIT / NASA / CALCE 真实加载器（CALCE 带来源指纹的 parquet 缓存）
+├── tests/                    无第三方依赖的回归测试（python tests/test_cache_fingerprint.py）
 ├── data/protocol.py         清洗 / SOH 归一 / 相对起点切分 / 平滑参考
 ├── adapters/base.py         Forecaster 接口 + 批量滚动递归 rolling_forecast_batch
 ├── adapters/                chronos / timesfm / lagllama / moirai（各自独立种子推进）
