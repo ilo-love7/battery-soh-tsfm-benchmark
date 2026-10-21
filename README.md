@@ -383,8 +383,9 @@ requirements-models.txt       模型依赖（已实测可共存的版本组合 +
 @software{zhicheng_tsfm_battery_2026,
   title  = {Do Zero-Shot Time-Series Foundation Models Beat Simple Baselines
             for Battery SOH Prediction? A Three-Dataset Benchmark},
+  author = {ilo-love7},
   year   = {2026},
-  note   = {https://github.com/<your-account>/<your-repo>},
+  note   = {https://github.com/ilo-love7/battery-soh-tsfm-benchmark},
   license = {MIT}
 }
 ```

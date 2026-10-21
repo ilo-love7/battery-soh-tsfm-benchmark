@@ -21,9 +21,11 @@ keywords:
   - benchmark
   - reproducibility
 authors:
-  # 如需署名，把下面这一条换成你自己的名字（CFF 支持 given-names + family-names）
-  - name: "Zhicheng Time-Series Benchmark Project"
-repository-artifact: "https://github.com/<your-account>/<your-repo>"
+  # 当前用 GitHub 用户名署名；换成真实姓名时改成
+  #   - given-names: "Ming"
+  #     family-names: "Zhang"
+  - name: "ilo-love7"
+repository-artifact: "https://github.com/ilo-love7/battery-soh-tsfm-benchmark"
 references:
   - type: article
     title: "Chronos: Learning the Language of Time Series"
