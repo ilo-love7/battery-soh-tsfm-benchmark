@@ -21,7 +21,9 @@
 - [主要结论](#主要结论)
 - [基准设计](#基准设计)
 - [结果](#结果)
+- [概率口径：区间覆盖率只有 2–22%](#概率口径区间覆盖率只有-222)
 - [机制：不是"更懂电池"，而是"敢不敢外推"](#机制不是更懂电池而是敢不敢外推)
+- [2 个参数的校准头](#2-个参数的校准头)
 - [快速开始](#快速开始)
 - [目录结构](#目录结构)
 - [复现性：我们踩过并修掉的坑](#复现性我们踩过并修掉的坑)
@@ -42,9 +44,14 @@
 | 6 | 微调只迁移"**敢外推**"，不迁移"**该多陡**" | CALCE EOL 命中 0% → 88%，但起点已偏低的电池被外推到接近 0（单支 MAE 109.8） |
 | 7 | EOL 指标只在 NASA / CALCE 可用，且样本量小到**不足以支撑显著性结论**；NASA 只作方向性证据（排名随起点变化、种子 CV 30.6%，naive_linear 换整段拟合能从 6.11 降到 2.48） | NASA n=4（闸门后 3）、CALCE n=14（闸门后 8） |
 | 8 | 结论对起点与种子稳健：三个起点、三个额外种子下排名均无翻转（NASA 除外） | MIT/CALCE 种子 CV ≤ 8.7%；NASA 30.6% |
+| 9 | **区间估计严重失真**：名义 80% 的预测区间，实际覆盖率中位数只有 2–22%（NASA 的 T5 是唯一例外，81%） | MIT Bolt 17.2% / T5 14.6% / TimesFM 2.3%；CALCE 3.7–9.3% |
+| 10 | v1 的 EOL 命中率**会把失败记成满分**：lag-llama 在 MIT 上 100% 命中，其实比真值早 197 个循环就跌破 80% | 过冲 −197 循环、RUL 相对误差 0.71；改用三量后可排序 |
+| 11 | **2 个标量的校准头 ≈ 1 支电池上的全量微调**，且 EOL 命中率反超所有微调档位 | MIT 4.110 → 3.256（−20.8%，微调 1 支为 3.241）；EOL 0% → 47% vs 微调 5–37% |
 
 > 全部数字见 [`04_文档报告/结果表.md`](04_文档报告/结果表.md)、
-> 区间与 p 值见 [`03_实验结果/显著性检验.md`](03_实验结果/显著性检验.md)。
+> 区间与 p 值见 [`03_实验结果/显著性检验.md`](03_实验结果/显著性检验.md)、
+> 概率口径与 EOL 重设计见 [`04_文档报告/EOL重设计.md`](04_文档报告/EOL重设计.md)、
+> 校准头三方对比见 [`04_文档报告/校准头对比.md`](04_文档报告/校准头对比.md)。
 
 ---
 
@@ -160,6 +167,40 @@ MIT 内部 OOD（batch3，40 cells）：Chronos-Bolt **2.53** vs naive_linear 2.
 
 ---
 
+## 概率口径：区间覆盖率只有 2–22%
+
+基础模型原生输出预测分布（Chronos-Bolt 直接出分位数、TimesFM 有连续分位数头、
+Moirai / Lag-Llama 是采样解码）。本项目把分位数一起落盘，报 **CRPS**、
+**PICP@80%**（名义 80% 区间的实际覆盖率）、**MPIW**（平均区间宽度）。
+产物在二级目录 `03_实验结果/prob/`，不污染主表。
+
+| 库 | 模型 | CRPS | PICP@80% | MPIW (SOH%) |
+|---|---|---|---|---|
+| MIT | chronos-bolt | 4.123 | **17.2%** | 0.279 |
+| MIT | chronos | 3.042 | 14.6% | 0.458 |
+| MIT | timesfm | 4.737 | **2.3%** | 0.142 |
+| NASA | chronos | 2.948 | **81.0%** | 12.904 |
+| NASA | chronos-bolt | 5.797 | 22.2% | 3.819 |
+| CALCE | chronos-bolt | 12.627 | 9.3% | 0.724 |
+| CALCE | timesfm | 11.621 | 3.7% | 0.574 |
+
+- **名义 80% 的区间，实际只覆盖 2–22%**。唯一例外是 NASA 上的 Chronos-T5（81%，
+  几乎完美校准）——而它恰好也是 NASA 上点预测最好的模型。
+- **PICP 与 MAE 不同向**：MIT 上 TimesFM 的 MAE 比 Bolt 差 18%，PICP 却只有 Bolt 的
+  1/7（2.3% vs 17.2%）——它不只是"点预测偏"，而是**连自己偏了多少都不知道**。
+  只看 MAE 的基准会把这类失败模式完全藏起来。
+- CRPS 同时惩罚"偏"和"过度自信"，因此比 MAE 更严格。完整表见
+  [`04_文档报告/EOL重设计.md`](04_文档报告/EOL重设计.md)。
+
+**EOL 指标重设计**：v1 的"命中率"在 MIT 上恒为 0%（数据在 EOL 处截断），在
+lag-llama 上恒为 100%——两个常数都不含信息量。补三个量后（`RUL 相对误差` /
+`带符号过冲循环数` / `未穿越裕度`）才能看出：lag-llama 的 100% 命中其实是
+**比真值早 197 个循环就跌破 80%**（过冲 −197、RUL 相对误差 0.71），
+而零样本 Bolt/T5/TimesFM/Moirai 的"0%"分别是**还差 16.1 / 12.7 / 17.2 / 17.8
+个 SOH 点**没触到——差距巨大且可排序。
+
+---
+
 ## 机制：不是"更懂电池"，而是"敢不敢外推"
 
 对每个 cell 计算两个量：
@@ -201,6 +242,76 @@ EOL 命中率：CALCE **0% → 88%**，NASA 0% → 33%。
 但"该画多陡"没有迁移好：起点已经偏低的电池被按 MIT 先验继续外推到接近 0
 （单支 MAE 最高 109.8），把整体中位数反而拉高。
 **工程判据：部署前先看起点 SOH，起点已明显低于额定健康度时必须重新标定衰减幅度。**
+
+---
+
+## 2 个参数的校准头
+
+如果收益主要来自"敢不敢外推"这一个自由度，那就不必动 190 MB 权重。冻结
+Chronos-Bolt，只在输出端学 2 个数：
+
+```
+p' = c + s·(p − c) + b        c = 当前上下文最后一个点，逐 chunk 施加
+```
+
+`s` = 模型预测的每步变化量打几折，`b` = 每步额外恒定漂移。第三个加性参数在递归下
+与 `b` **不可辨识**（都表现为每步漂移），所以这就是 2 个可辨识参数。
+`s > 0` 时变换单调，分位数序天然保持，同一组参数可直接用于概率链路。
+
+拟合：MIT train（batch1），起点 0.5、上下文 512、chunk 64，跨 cell 的 MAE_smooth
+中位数作目标，两阶段网格搜索（7×7 粗 + 5×5 细，共 74 次前向，**零梯度**）。
+
+| 拟合集 | s | b | 拟合集内中位 MAE | 同集零样本 | 改善 |
+|---|---|---|---|---|---|
+| 41 支（默认） | **1.65** | **0.00** | 1.954 | 4.368 | −55.3% |
+| 19 支（与微调同数据） | 1.60 | 0.00 | 1.435 | 4.016 | −64.3% |
+
+`s ≈ 1.6`、`b = 0`——**单个参数就够了**，且两组不同数据子集给出几乎相同的 `s`。
+这正是机制假设的直接印证：模型不是画错了形状，而是不敢把已看到的斜率推到底。
+
+MIT test 上（全部 ctx512 口径）：
+
+| 方案 | 参数/数据预算 | MAE_smooth | 相对零样本 | EOL 命中率 |
+|---|---|---|---|---|
+| 零样本 Chronos-Bolt | 0 参数 / 0 支 | 4.110 | — | 0% |
+| **2 参数校准头（41 支）** | **2 标量 / 41 支 / 无梯度** | **3.256** | **−20.8%** | **47%** |
+| 2 参数校准头（19 支，同微调数据） | 2 标量 / 19 支 / 无梯度 | 3.212 | −21.8% | 40% |
+| 微调 1 支 | ~60M 权重 / 1 支 / 300 步 | 3.241 | −21.1% | 5% |
+| 微调 4 支 | ~60M 权重 / 4 支 / 300 步 | 2.864 | −30.3% | 33% |
+| 微调 8 支 | ~60M 权重 / 8 支 / 300 步 | 2.745 | −33.2% | 37% |
+| 微调 19 支 | ~60M 权重 / 19 支 / 300 步 | **2.656** | **−35.4%** | 26% |
+
+- **2 个标量 ≈ 1 支电池上的全量微调**（3.256 vs 3.241，差 0.5%），但不需要任何反向传播；
+- 拿到 19 支微调收益的 **60%**，参数量差 7 个数量级；
+- **EOL 命中率 47%，反超所有微调档位**（5–37%）；
+- 概率侧同步改善：CRPS 4.123 → 3.041，PICP 17.2% → 24.7%（仍远低于名义 80%）。
+
+**边界（重要）**：把 MIT 上拟合的 `s = 1.65` 直接搬到其他库**不成立**——
+
+| 库 | 零样本 MAE | 校准 MAE | Δ% | PICP |
+|---|---|---|---|---|
+| MIT | 4.110 | 3.256 | −20.8% | 17.2% → 24.7% |
+| NASA | 5.747 | 5.361 | −6.7% | 22.2% → 41.5% |
+| CALCE | 12.600 | 12.755 | **+1.2%** | 9.3% → 17.2% |
+
+CALCE 上是**负迁移**：`s` 学的是"**这个数据分布**该放大多少"，不是"这个模型的属性"。
+它必须在目标分布上重新拟合——这也说明下一步应该把 `s` 做成由上下文在线估计的量，
+而不是离线常数。
+
+复现：
+
+```bash
+# 1) 拟合 2 个参数（约 11 分钟，零梯度）
+python 01_源代码/calibrate_head.py --dataset mit --split train
+
+# 2) 在三个库上评测（产物进主表 + prob/ 二级目录）
+bash scripts/run_cal.sh all
+
+# 3) 生成三方对比表
+python 01_源代码/analyze_calibration.py
+```
+
+完整表见 [`04_文档报告/校准头对比.md`](04_文档报告/校准头对比.md)。
 
 ---
 
@@ -289,6 +400,15 @@ cd 01_源代码
 # few-shot 曲线（横轴按**实际**支持集大小 1/4/7/19 绘制）
 ../venv/Scripts/python.exe plot_fewshot.py
 
+# 概率口径（CRPS / PICP / MPIW + EOL 重设计），产物进二级目录 prob/
+bash ../scripts/run_prob.sh all
+../venv/Scripts/python.exe analyze_eol2.py
+
+# 2 参数校准头：拟合 → 三库评测 → 三方对比
+../venv/Scripts/python.exe calibrate_head.py --dataset mit --split train
+bash ../scripts/run_cal.sh all
+../venv/Scripts/python.exe analyze_calibration.py
+
 # 图（--runs 用分号分隔：结果目录名本身含逗号，所以不能用逗号分隔）
 ../venv/Scripts/python.exe figures.py --prefix mit_ \
   --runs "mit-zero-chronos-bolt,chronos,timesfm,naive_linear-ctx512;mit-zero-moirai;mit-zero-lag-llama;mit-zero-naive_last,naive_linear,exp_decay-refactor;mit-zero-arima"
@@ -331,14 +451,19 @@ bash scripts/run_matrix.sh report   # 纯汇总：report / 显著性 / 机制 / 
 ├── data/loaders.py          MIT / NASA / CALCE 真实加载器（CALCE 带来源指纹的 parquet 缓存）
 ├── tests/                    无第三方依赖的回归测试（python tests/test_cache_fingerprint.py）
 ├── data/protocol.py         清洗 / SOH 归一 / 相对起点切分 / 平滑参考
-├── adapters/base.py         Forecaster 接口 + 批量滚动递归 rolling_forecast_batch
+├── adapters/base.py         Forecaster 接口 + 批量滚动递归 + 分位数接口 + 分位数穿越修复
 ├── adapters/                chronos / timesfm / lagllama / moirai（各自独立种子推进）
+├── adapters/calibrated.py   2 参数单调校准头（冻结基础模型，p' = c + s(p-c) + b）
 ├── baselines/classic.py     naive_last / naive_linear / exp_decay / ARIMA
 ├── evaluation/metrics.py    MAE / RMSE(SOH) + EOL 误差 + RUL 误差 + 命中率
+│                            + CRPS / PICP / MPIW + EOL 重设计三量
 ├── run_benchmark.py         一行命令复现一格（--models / --max-context / --start-fracs / --seed）
+├── calibrate_head.py        拟合校准头的 (s, b)（两阶段网格，零梯度）
 ├── report.py                汇总 summary.json → 结果表.md + 汇总表.csv
 ├── stats_significance.py    bootstrap CI + 配对 Wilcoxon → 显著性检验.md
 ├── analyze_shrinkage.py     pred_ratio / 失配度 / 秩相关 → 衰减保留率.csv + fig5
+├── analyze_eol2.py          EOL 重设计汇总 → 汇总_EOL重设计.csv + EOL重设计.md
+├── analyze_calibration.py   零样本 / 2 参数 / 微调三方对比 → 校准头对比.md
 ├── analyze_seeds.py         多种子方差与排名翻转检查 → 种子方差.md
 ├── diag_curvature.py        knee_ratio（数据侧衰减加速比）
 ├── ablate_naive_linear.py   naive_linear 拟合窗口消融（⌊n/2⌋ vs 整段）
@@ -347,8 +472,10 @@ bash scripts/run_matrix.sh report   # 纯汇总：report / 显著性 / 机制 / 
 └── figures.py               轨迹图 / 箱线图 / EOL 命中率 / 起点敏感性
 02_数据集链接/                三个数据集的来源、字段与获取方式（只写路径，不存数据）
 03_实验结果/                  每次运行的 per_cell / summary / predictions + 汇总与检验
+  ├── prob/                  概率口径矩阵（CRPS/PICP/MPIW + EOL 重设计），二级目录不进主表
+  └── calib/                 校准头参数与网格曲面（calibration_head.json / grid_surface.csv）
 04_文档报告/                  短文初稿、方案、执行记录、结果表、figures、_history（历史材料）
-scripts/                      setup_env.{sh,bat} + run_matrix.sh（全矩阵）
+scripts/                      setup_env.{sh,bat} + run_matrix.sh + run_prob.sh + run_cal.sh
 requirements-core.txt         核心依赖（基线所需）
 requirements-models.txt       模型依赖（已实测可共存的版本组合 + 踩坑记录）
 ```
@@ -382,6 +509,10 @@ requirements-models.txt       模型依赖（已实测可共存的版本组合 +
 | 10 | 汇总表用**文件 mtime** 判新旧 | 别人 clone 下来跑 `report.py`，`汇总表.csv` 和仓库里存的对不上：NASA chronos 的「目录/耗时」变成 `_det_b`，naive_linear 的 EOL 列从 20.6/3 变成 14.3/4（旧副本顶掉）。git 不保留 mtime，"保留最新"退化成"取决于检出顺序" | 改判 `summary.json` 里的 `meta["timestamp"]`（随内容一起提交，跨机器稳定），时间相同则保留 `sorted(glob)` 先到者 |
 | 11 | `scripts/run_matrix.sh` 与**已发布结果对不上** | 三个缺口：MIT ctx512 那格缺 `moirai/lag-llama/arima/refactor` 四个模型；MIT 敏感性段的模型集是 `chronos-bolt,chronos,...` 而实际发布目录是 `mit-zero-chronos-bolt,naive_linear,exp_decay-sens`；report 段不跑 few-shot 与消融，`fig6` 永远出不来 | 脚本补齐模型集，并新增 `extra`（few-shot 训练 + 微调评测 + 跨库迁移 + `ablate_naive_linear.py`）与 `report`（纯汇总出图）两段；目录命名就是 `figures.py` / `analyze_seeds.py` 的事实标准 |
 | 12 | CALCE **parquet 缓存遮蔽 `CALCE_DIR`** | 缓存只看 `exists()` 就复用，不看指向哪个目录：换一份 zip 或改电压阈值，拿到的还是旧缓存里的 14 支，且**不报错** | 缓存带"来源指纹"（zip 清单 + 名字/大小/mtime + 阈值）写进 `calce_capacity_v3.meta.json`，不一致就重新解析；同时修复"旧 `load_calce` 定义覆盖新定义"导致指纹一度不生效的问题。实测重解析后 14 支的循环数与容量和已发表 `CALCE_UMD.md` 逐位一致 |
+| 13 | 采样型适配器**切错轴**：`samples[:horizon]` | Moirai / Lag-Llama 概率指标全空（`could not broadcast (3,64) into (3,21)`）；更隐蔽的是 `horizon < num_samples` 时**不报错但语义错**——只用前 horizon 条样本算分位数，中位数与 `fc.quantile(0.5)` 不一致 | 抽成 `adapters.base.quantiles_from_samples()`（切时间轴 `[:, :horizon]`、保留全部样本），两个适配器共用 + 10 项断言 |
+| 14 | 包装器**上限不透传** | `CalibratedForecaster` 只在构造时拷贝 `max_context`，`run_benchmark` 写 `model.max_context = 512` 时底层仍是 2048 ⇒ 校准跑用了 2 倍上下文，与基线不同口径（实测差 0.2 SOH%） | `max_context` / `max_horizon` 改成 property，setter 直写 `base`；回归测试锁死"设包装器必须夹紧底层" |
+| 15 | 指标**注释与公式符号相反** | `eol_overshoot_cyc = eol_pred − eol_true`，正 = 偏晚，注释却写"正 = 偏早" | 按公式订正注释，并在 `metrics.py` / `analyze_eol2.py` 两处同步；这类"公式对、注释错"比代码 bug 更危险——下游会照注释解读 |
+| 16 | 分位数**穿越**用 `np.sort` 修 | 排序会换掉模型的 q50，分位数递归与点预测的中位数差 0.012 SOH%，`predictions_*.npz` 不再逐位一致 | 以模型中位数为锚做保序修复（下侧 `min(cummax, q50)`、上侧 `max(cummax, q50)`），修复后中位数偏差 0.000e+00 |
 
 细节见 [`04_文档报告/执行记录-2026-10-20.md`](04_文档报告/执行记录-2026-10-20.md)。
 
@@ -391,7 +522,8 @@ requirements-models.txt       模型依赖（已实测可共存的版本组合 +
 
 1. **EOL 指标太脆**：MIT 在 EOL 处截断（数据没有"跌破 80% 之后"的样本），零样本模型"差一点"就到不了，
    命中率恒为 0%；NASA 闸门后只剩 3 支，CALCE 剩 8 支，**都不足以做显著性检验**。
-   本基准因此以 SOH 轨迹误差为主指标，EOL 只作辅助。
+   已补三个替代量（RUL 相对误差 / 带符号过冲 / 未穿越裕度，见上文"概率口径"一节），
+   把常数 0 换成了可排序的数；但样本量本身仍不足，EOL 只作辅助指标。
 2. **Lag-Llama 的上下文被 32 卡住，而且它是五个模型里规模最小的（实测权重 2.4 M 参数，仅为 Chronos-T5-small 的 1/19）**：
    原生上下文与其他模型的 512 不可比，容量差距也极大。
    已单独标注；但它在 MIT 上仍是最差（7.05），说明"提前 197 循环跌破 80%"不能只归因于上下文长度或参数规模。
@@ -400,6 +532,11 @@ requirements-models.txt       模型依赖（已实测可共存的版本组合 +
 5. **全部在 CPU 上跑**：单次全矩阵约 10 小时，因此只做了 3 个额外种子（不是 10 个）。
 6. **`knee_ratio` 是事后量**：它需要真值才能算，只能用于**解释**已发生的结果，
    不能作为部署时的先验判据。要做在线判据需要另找只看上下文的代理指标。
+7. **校准头的 `s` 不能跨库迁移**：在 MIT 上拟合的 `s = 1.65` 搬到 CALCE 是负迁移（+1.2%）。
+   `s` 学的是"这个数据分布该放大多少"，不是模型属性，必须在目标分布上重新拟合。
+   下一步应把它做成由上下文在线估计的量。
+8. **概率口径仍远未校准**：即使经过校准头，PICP 也只有 25%（MIT）/ 41%（NASA）/ 17%（CALCE），
+   离名义 80% 还很远。本基准只能指出"过度自信"这个方向，没有解决它。
 
 ---
 

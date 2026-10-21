@@ -8,11 +8,16 @@
 """
 from __future__ import annotations
 
-from adapters.base import (Forecaster, NotInstalledError, rolling_forecast,
-                           rolling_forecast_batch)
+from adapters.base import (DEFAULT_QUANTILE_LEVELS, Forecaster,  # noqa: E402
+                           NotInstalledError, rolling_forecast,
+                           rolling_forecast_batch,
+                           rolling_forecast_quantiles,
+                           rolling_forecast_quantiles_batch)
 
 __all__ = ["Forecaster", "NotInstalledError", "get_forecaster",
            "rolling_forecast", "rolling_forecast_batch",
+           "rolling_forecast_quantiles", "rolling_forecast_quantiles_batch",
+           "DEFAULT_QUANTILE_LEVELS",
            "list_models", "BASELINES"]
 
 BASELINES = ["naive_last", "naive_linear", "exp_decay", "arima"]
@@ -45,6 +50,15 @@ def get_forecaster(name: str, **kwargs) -> Forecaster:
         if kind == "lagllama":
             from adapters.lagllama import LagLlamaForecaster
             return LagLlamaForecaster(**params)
+        if kind == "calibrated":
+            from adapters.calibrated import CalibratedForecaster
+            from configs.config import load_cal_params
+            base_name = params.pop("base", "chronos-bolt")
+            params_file = params.pop("params_file", None)
+            cal = load_cal_params(params_file)     # 缺文件时显式报错，不静默
+            params.update(cal)                     # s / b
+            base = get_forecaster(base_name)
+            return CalibratedForecaster(base, **params)
         raise ValueError(f"MODELS[{name}] 的 adapter 字段未知: {kind}")
 
     # 基线

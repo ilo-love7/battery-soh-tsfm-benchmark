@@ -87,19 +87,24 @@ class ChronosForecaster(Forecaster):
         return [torch.tensor(self._truncate(c), dtype=torch.float32) for c in contexts]
 
     # ------------------------------------------------------------ 预测
-    def predict_quantiles_batch(self, contexts: Sequence[np.ndarray], horizon: int):
+    def supports_quantiles(self) -> bool:
+        return True
+
+    def predict_quantiles_batch(self, contexts: Sequence[np.ndarray], horizon: int,
+                                levels: Sequence[float] = (0.1, 0.5, 0.9)):
         """返回 (B, 3, H) 的 [q10, q50, q90]。"""
         self._load()
         inputs = self._to_batch(contexts)
+        lv = [float(x) for x in levels]
 
         if self.bolt:
             q, _ = self._pipe.predict_quantiles(
                 inputs, prediction_length=horizon,
-                quantile_levels=self.quantile_levels,
+                quantile_levels=lv,
             )
             q = q.cpu().numpy().astype(float)
             # 2.3.x 返回 (B, H, Q)，老版本返回 (B, Q, H)——按形状归一，别硬编码
-            nq = len(self.quantile_levels)
+            nq = len(lv)
             if q.ndim == 2:                                  # 单条输入被压成 2 维
                 q = q[None, ...]
             if q.shape[1] != nq and q.shape[2] == nq:
@@ -114,7 +119,7 @@ class ChronosForecaster(Forecaster):
             inputs, prediction_length=horizon, num_samples=self.num_samples,
             limit_prediction_length=False,
         ).cpu().numpy().astype(float)                    # (B, S, H)
-        qs = np.quantile(samples, self.quantile_levels, axis=1)   # (3, B, H)
+        qs = np.quantile(samples, lv, axis=1)             # (Q, B, H)
         return np.transpose(qs, (1, 0, 2))
 
     def predict_batch(self, contexts: Sequence[np.ndarray], horizon: int) -> List[np.ndarray]:

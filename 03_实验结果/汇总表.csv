@@ -1,6 +1,7 @@
 ﻿数据集,划分,实验,模型,起点,n,MAE_smooth,RMSE_smooth,MAE_raw,EOL命中率,EOL误差,EOL_n,耗时s,目录
 calce,all,main,chronos,0.5,14,11.067793027545173,13.697763759057228,11.071473261722678,0.125,70.40170026854827,1,254.19,"calce-zero-chronos-bolt,chronos,timesfm,naive_linear,naive_last,exp_decay"
 calce,all,main,chronos-bolt,0.5,14,11.93560243462785,15.188903034037292,11.941129033583838,0.0,,0,35.56,"calce-zero-chronos-bolt,chronos,timesfm,naive_linear,naive_last,exp_decay"
+calce,all,main,chronos-bolt-cal,0.5,14,12.029354234861717,15.942828336685615,12.035481556785808,0.0,,0,25.32,calce-chronos-bolt-cal
 calce,all,main,exp_decay,0.5,14,7.352099378049667,9.035302036030838,7.3519222080421915,0.25,451.00753506996085,2,7.68,"calce-zero-chronos-bolt,chronos,timesfm,naive_linear,naive_last,exp_decay"
 calce,all,main,lag-llama,0.5,14,9.41379331723639,11.730446374676134,9.420284736068481,1.0,86.71465142435977,8,235.49,calce-zero-lag-llama
 calce,all,main,moirai,0.5,14,12.506406662881446,15.860511076348395,12.512982610165931,0.0,,0,77.59,calce-zero-moirai
@@ -23,6 +24,7 @@ mit,secondary_test,main,chronos-bolt,0.5,40,2.5272541109249507,4.228475900558329
 mit,secondary_test,main,naive_linear,0.5,40,2.797945255239036,4.507677526904381,2.797963574730396,0.0,,0,0.04,"mit-zero-chronos-bolt,naive_linear"
 mit,test,ctx512,chronos,0.5,43,3.0238991323519877,4.809778592058779,3.024056245743117,0.0,,0,319.02,"mit-zero-chronos-bolt,chronos,timesfm,naive_linear-ctx512"
 mit,test,ctx512,chronos-bolt,0.5,43,4.109767651686458,6.182256416218137,4.110225010218196,0.0,,0,13.9,"mit-zero-chronos-bolt,chronos,timesfm,naive_linear-ctx512"
+mit,test,ctx512,chronos-bolt-cal,0.5,43,3.2557339364250106,4.8142033066013745,3.2557939481041354,0.46511627906976744,40.076431166166856,20,33.84,mit-chronos-bolt-cal-ctx512
 mit,test,ctx512,naive_linear,0.5,43,4.065992849690503,5.987506199986091,4.065988053922387,0.0,,0,0.06,"mit-zero-chronos-bolt,chronos,timesfm,naive_linear-ctx512"
 mit,test,ctx512,timesfm,0.5,43,4.840332535189861,6.948751980803341,4.840519925522515,0.0,,0,31.24,"mit-zero-chronos-bolt,chronos,timesfm,naive_linear-ctx512"
 mit,test,main,arima,0.5,43,5.150066353715046,7.089750308268218,5.150023732958447,0.0,,0,58.31,mit-zero-arima
@@ -45,6 +47,7 @@ mit,test,sens,exp_decay,0.6,43,5.1079855502607385,6.721130274505426,5.1078114576
 mit,test,sens,naive_linear,0.6,43,4.629912965132944,6.245617692075409,4.629880888926867,0.0,,0,0.05,"mit-zero-chronos-bolt,naive_linear,exp_decay-sens"
 nasa,all,main,chronos,0.5,4,1.522695020350112,1.904734410041929,1.6400314207805522,1.0,6.21341925016462,3,5.23,"nasa-zero-chronos-bolt,chronos,timesfm,naive_linear,naive_last,exp_decay"
 nasa,all,main,chronos-bolt,0.5,4,5.746810464251014,6.844986090595359,5.770160414324189,0.0,,0,12.42,"nasa-zero-chronos-bolt,chronos,timesfm,naive_linear,naive_last,exp_decay"
+nasa,all,main,chronos-bolt-cal,0.5,4,5.36071566518666,6.459428997707082,5.384998330497277,0.3333333333333333,6.362917299738825,1,19.42,nasa-chronos-bolt-cal
 nasa,all,main,exp_decay,0.5,4,3.6538768591472244,3.770046252530019,3.6630739529794383,1.0,16.50503745003759,3,0.39,"nasa-zero-chronos-bolt,chronos,timesfm,naive_linear,naive_last,exp_decay"
 nasa,all,main,lag-llama,0.5,4,8.719719975007232,10.845809172323962,8.794792291184331,1.0,22.093039943437404,3,20.55,nasa-zero-lag-llama
 nasa,all,main,moirai,0.5,4,6.579420284836931,9.356214704908222,6.612675822841539,0.0,,0,12.08,nasa-zero-moirai

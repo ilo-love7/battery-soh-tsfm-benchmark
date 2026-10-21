@@ -25,6 +25,7 @@ OUT_CSV = RESULTS_ROOT / "汇总表.csv"
 
 # 表格里的显示顺序（基础模型在前，基线在后）
 ORDER = ["chronos-bolt", "chronos", "timesfm", "moirai", "lag-llama",
+         "chronos-bolt-cal",          # §9.3 校准头，属于主表三方对比的一列
          "naive_linear", "naive_last", "exp_decay", "arima"]
 
 

@@ -115,6 +115,13 @@ def check_dataset(dataset: str, cfg: Optional[dict] = None) -> None:
             )
 
 
+# ---- 输出 / 权重目录（必须放在 MODELS 之前：注册表里引用了 RESULTS_ROOT）----
+RESULTS_ROOT = PROJECT_ROOT / "03_实验结果"
+
+# ---- 权重：优先用项目内已下载的本地副本，避免每次联网 + 规避 hf-xet 中断 ----
+MODELS_DIR = PROJECT_ROOT / "shared" / "models"
+MODELS_DIR.mkdir(parents=True, exist_ok=True)
+
 # ---- MIT 官方三划分（41/43/40） ----
 MIT_SPLITS = {
     "train": "batch1",            # 41 cells，few-shot 微调用
@@ -146,6 +153,17 @@ MODELS = {
         "adapter": "lagllama", "kwargs": {},
         "note": "社区 Lag-Llama（gluonts，独立环境）",
     },
+    # §9.3：冻结 chronos-bolt + 2 参数单调校准头 p' = c + s(p-c) + b，
+    # (s, b) 由 calibrate_head.py 在 MIT train 上拟合后写进
+    # 03_实验结果/calib/calibration_head.json（= CALIB_PARAMS_FILE 默认值）。
+    # 刻意**不**在这里写死 params_file：留空才能让环境变量 CALIB_PARAMS_FILE
+    # 覆盖（做同数据/不同数据预算的消融），写死会让 env 静默失效。
+    # ⚠️ 参数文件缺失时 load_cal_params() 显式报错，不静默退回 s=1,b=0。
+    "chronos-bolt-cal": {
+        "adapter": "calibrated",
+        "kwargs": {"base": "chronos-bolt", "name": "chronos-bolt-cal"},
+        "note": "冻结 Chronos-Bolt + 2 参数单调校准头（MIT train 拟合，§9.3）",
+    },
 }
 
 # ---- 评测协议（写死，保证所有模型同口径） ----
@@ -161,13 +179,6 @@ PROTOCOL = {
     "seeds": [42, 43, 44],    # 采样类模型重复种子
 }
 
-# ---- 输出 ----
-RESULTS_ROOT = PROJECT_ROOT / "03_实验结果"
-
-# ---- 权重：优先用项目内已下载的本地副本，避免每次联网 + 规避 hf-xet 中断 ----
-MODELS_DIR = PROJECT_ROOT / "shared" / "models"
-MODELS_DIR.mkdir(parents=True, exist_ok=True)
-
 
 def resolve_model_ref(repo_id: str) -> str:
     """把 HF 仓库名解析成可加载路径：本地副本优先，否则回落仓库名（走镜像）。
@@ -179,3 +190,43 @@ def resolve_model_ref(repo_id: str) -> str:
     if (local / "config.json").exists():
         return str(local)
     return repo_id
+
+
+# ---- 校准头参数（§9.3）----
+CALIB_PARAMS_FILE = RESULTS_ROOT / "calib" / "calibration_head.json"
+
+
+def load_cal_params(params_file: str | None = None) -> dict:
+    """读校准头的 (s, b)。params_file=None 时用默认路径。
+
+    优先级：显式 params_file > 环境变量 CALIB_PARAMS_FILE > 默认路径。
+    环境变量用于消融（如换成只在 fewshot 同 19 支上拟合的参数做严格同数据对照），
+    避免为每个变体在 MODELS 里加一条注册。
+
+    文件缺失 ⇒ SystemExit 并说明怎么生成。**不**静默返回 s=1,b=0：
+    那会让"校准版"退化成零样本版，而 summary.json 里还写着校准，
+    比报错危险得多。
+    """
+    import json
+    import os
+    if params_file:
+        path = Path(params_file)
+    elif os.environ.get("CALIB_PARAMS_FILE"):
+        path = Path(os.environ["CALIB_PARAMS_FILE"])
+    else:
+        path = CALIB_PARAMS_FILE
+    if not path.exists():
+        raise SystemExit(
+            f"找不到校准头参数文件：{path}\n"
+            f"请先在项目根目录拟合：\n"
+            f"    python 01_源代码/calibrate_head.py --dataset mit --split train\n"
+            f"（产物即上述 JSON；拟合一次约 20 分钟，只需跑一遍）")
+    data = json.loads(path.read_text(encoding="utf-8"))
+    best = data.get("best") or {}
+    out = {"s": float(best["s"]), "b": float(best["b"])}
+    for k in ("s", "b"):
+        if out[k] != out[k] or abs(out[k]) == float("inf"):
+            raise SystemExit(f"{path} 里的 {k} 不是有限数：{out[k]}")
+    if out["s"] <= 0:
+        raise SystemExit(f"{path} 里的 s 必须 > 0（单调性）：{out['s']}")
+    return out

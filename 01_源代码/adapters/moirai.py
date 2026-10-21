@@ -15,7 +15,8 @@ from typing import List, Sequence
 
 import numpy as np
 
-from adapters.base import Forecaster, NotInstalledError
+from adapters.base import (Forecaster, NotInstalledError,  # noqa: E402
+                           quantiles_from_samples)
 
 
 class MoiraiForecaster(Forecaster):
@@ -86,6 +87,39 @@ class MoiraiForecaster(Forecaster):
         if len(fcs) != len(entries):
             raise RuntimeError(f"Moirai 返回 {len(fcs)} 条预测，期望 {len(entries)}")
         return [np.asarray(fc.quantile(0.5), dtype=float)[:horizon] for fc in fcs]
+
+    def supports_quantiles(self) -> bool:
+        # Moirai 走采样解码，gluonts 的 SampleForecast 保留全部样本
+        return True
+
+    def predict_quantiles_batch(self, contexts: Sequence[np.ndarray], horizon: int,
+                                levels: Sequence[float] = (0.1, 0.5, 0.9)):
+        """用同一批样本算分位数，返回 (B, Q, H)。
+
+        ⚠️ 必须与 predict_batch 走**同一次** predict 调用、同一个种子，
+        否则中位数会和点预测口径不一致。所以这里复制 predict_batch 的流程，
+        只是把 fc.quantile(q) 换成对同一批样本逐个取分位数。
+        """
+        self._load()
+        from gluonts.dataset.common import ListDataset
+
+        if horizon > self.max_horizon:
+            raise ValueError(f"Moirai 单次 horizon 上限 {self.max_horizon}，请减小 rolling_chunk")
+        entries = [{"start": "2000-01-01 00:00:00", "target": self._truncate(c)}
+                   for c in contexts]
+        ds = ListDataset(entries, freq="H")
+        self._seed_next()
+        fcs = list(self._predictor.predict(ds))
+        if len(fcs) != len(entries):
+            raise RuntimeError(f"Moirai 返回 {len(fcs)} 条预测，期望 {len(entries)}")
+
+        lv = [float(x) for x in levels]
+        out = np.empty((len(fcs), len(lv), horizon), dtype=float)
+        for b, fc in enumerate(fcs):
+            # 切时间轴、保留全部样本：与 predict_batch 的 fc.quantile(0.5) 同源
+            # （细节与踩坑记录见 adapters.base.quantiles_from_samples）
+            out[b] = quantiles_from_samples(fc.samples, lv, horizon)
+        return out
 
     def predict(self, context: np.ndarray, horizon: int) -> np.ndarray:
         return self.predict_batch([context], horizon)[0]

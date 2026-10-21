@@ -157,6 +157,11 @@ if has report; then
   an stats_significance.py
   an analyze_shrinkage.py
   an analyze_seeds.py
+  # 概率口径 / EOL 重设计 / 校准头三方对比（§9.1–9.3）。
+  # 只读 03_实验结果/prob 与 03_实验结果/calib，不重跑推理；
+  # 缺产物时脚本自己会给出"先跑 run_prob.sh / run_cal.sh"的提示，不拖死后续汇总。
+  an analyze_eol2.py
+  an analyze_calibration.py
   an diag_curvature.py --dataset mit --split test
   an diag_curvature.py --dataset nasa
   an diag_curvature.py --dataset calce

@@ -1,0 +1,237 @@
+{
+  "meta": {
+    "models": [
+      "chronos-bolt-cal"
+    ],
+    "dataset": "calce",
+    "setting": "zero",
+    "split": null,
+    "start_fracs": [
+      0.5
+    ],
+    "chunk": 64,
+    "max_context_override": null,
+    "seed_override": null,
+    "quantile_levels": [
+      0.1,
+      0.5,
+      0.9
+    ],
+    "protocol": {
+      "start_frac": 0.5,
+      "start_frac_sensitivity": [
+        0.4,
+        0.5,
+        0.6
+      ],
+      "smooth_window": 11,
+      "smooth_order": 2,
+      "outlier_thresh": 0.03,
+      "soh_ref_points": 5,
+      "eol_threshold": 80.0,
+      "rolling_chunk": 64,
+      "seeds": [
+        42,
+        43,
+        44
+      ]
+    },
+    "n_cells": 14,
+    "n_tasks": 14,
+    "model_info": {
+      "chronos-bolt-cal": {
+        "name": "chronos-bolt-cal",
+        "max_context": 2048,
+        "max_horizon": 64,
+        "supports_batch": true,
+        "supports_quantiles": true,
+        "model_id": "amazon/chronos-bolt-small",
+        "resolved": "C:\\Users\\34648\\Desktop\\智诚时序基础模型项目\\shared\\models\\chronos-bolt-small",
+        "device": "cpu",
+        "num_samples": 20,
+        "seed": 42,
+        "bolt": true,
+        "quantile_levels": [
+          0.1,
+          0.5,
+          0.9
+        ],
+        "calibrated": true,
+        "cal_params": {
+          "s": 1.65,
+          "b": 0.0
+        },
+        "cal_formula": "p' = c + s*(p - c) + b",
+        "base_model": "chronos-bolt",
+        "elapsed_sec": 25.32,
+        "n_ok": 14,
+        "n_err": 0,
+        "chunk_used": 64
+      }
+    },
+    "packages": {
+      "torch": "2.14.1",
+      "transformers": "5.20.2",
+      "chronos-forecasting": "2.3.2",
+      "timesfm": "3.0.2",
+      "uni2ts": "not-installed",
+      "gluonts": "not-installed",
+      "numpy": "2.5.4",
+      "pandas": "3.0.6",
+      "scipy": "1.18.1",
+      "statsmodels": "0.15.0"
+    },
+    "python": "3.13.14",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "hf_endpoint": "https://hf-mirror.com",
+    "timestamp": "2026-10-21T23:26:37"
+  },
+  "summary": {
+    "chronos-bolt-cal@0.5": {
+      "crps": {
+        "n": 14,
+        "median": 12.157751608127283,
+        "mean": 11.45549000200279,
+        "q25": 8.144066644914618,
+        "q75": 14.385227783875214,
+        "iqr": 6.241161138960596
+      },
+      "eol_defined": {
+        "n": 14,
+        "median": 1.0,
+        "mean": 0.5714285714285714,
+        "q25": 0.0,
+        "q75": 1.0,
+        "iqr": 1.0
+      },
+      "eol_hit": {
+        "n": 8,
+        "median": 0.0,
+        "mean": 0.0,
+        "q25": 0.0,
+        "q75": 0.0,
+        "iqr": 0.0
+      },
+      "eol_start_below": {
+        "n": 5,
+        "median": 1.0,
+        "mean": 1.0,
+        "q25": 1.0,
+        "q75": 1.0,
+        "iqr": 0.0
+      },
+      "eol_true": {
+        "n": 8,
+        "median": 555.0318137983655,
+        "mean": 620.7982351076431,
+        "q25": 495.64280255071105,
+        "q75": 619.5788616192028,
+        "iqr": 123.93605906849177
+      },
+      "mae_raw": {
+        "n": 14,
+        "median": 12.035481556785808,
+        "mean": 11.562943254862533,
+        "q25": 8.096116376286261,
+        "q75": 14.288101112626899,
+        "iqr": 6.191984736340638
+      },
+      "mae_smooth": {
+        "n": 14,
+        "median": 12.029354234861717,
+        "mean": 11.557040571216701,
+        "q25": 8.079979661254958,
+        "q75": 14.28471082916193,
+        "iqr": 6.2047311679069725
+      },
+      "mape_raw": {
+        "n": 14,
+        "median": 21.073648765453413,
+        "mean": 19.74054725847842,
+        "q25": 13.849256167245708,
+        "q75": 23.33761672824086,
+        "iqr": 9.488360560995153
+      },
+      "mpiw": {
+        "n": 14,
+        "median": 1.9127896059018084,
+        "mean": 2.9816859891454333,
+        "q25": 1.7179304007645766,
+        "q75": 2.3252686838698544,
+        "iqr": 0.6073382831052778
+      },
+      "n_context": {
+        "n": 14,
+        "median": 539.0,
+        "mean": 583.2857142857143,
+        "q25": 398.25,
+        "q75": 817.75,
+        "iqr": 419.5
+      },
+      "n_horizon": {
+        "n": 14,
+        "median": 540.0,
+        "mean": 584.0,
+        "q25": 399.25,
+        "q75": 818.0,
+        "iqr": 418.75
+      },
+      "no_cross_margin": {
+        "n": 8,
+        "median": 4.100536601992012,
+        "mean": 4.483956788932701,
+        "q25": 3.0623612168358285,
+        "q75": 6.329918870713204,
+        "iqr": 3.2675576538773754
+      },
+      "picp": {
+        "n": 14,
+        "median": 0.16220591447475038,
+        "mean": 0.22465385473540464,
+        "q25": 0.1411958542442932,
+        "q75": 0.20426302685000336,
+        "iqr": 0.06306717260571015
+      },
+      "pinaw": {
+        "n": 14,
+        "median": 0.05427302920772193,
+        "mean": 0.2836175790327247,
+        "q25": 0.04278093503490741,
+        "q75": 0.07173245392024018,
+        "iqr": 0.028951518885332768
+      },
+      "rmse_raw": {
+        "n": 14,
+        "median": 15.948563914484913,
+        "mean": 15.540758366387312,
+        "q25": 11.290811331514863,
+        "q75": 18.34870317335841,
+        "iqr": 7.057891841843546
+      },
+      "rmse_smooth": {
+        "n": 14,
+        "median": 15.942828336685615,
+        "mean": 15.528968534132371,
+        "q25": 11.28430242900031,
+        "q75": 18.345693776596086,
+        "iqr": 7.061391347595777
+      },
+      "rul_true_cyc": {
+        "n": 8,
+        "median": 121.98370518231604,
+        "mean": 110.29823510764311,
+        "q25": 92.10646484484631,
+        "q75": 128.62189527512226,
+        "iqr": 36.51543043027594
+      },
+      "start_cycle": {
+        "n": 14,
+        "median": 553.5,
+        "mean": 600.9285714285714,
+        "q25": 411.25,
+        "q75": 843.5,
+        "iqr": 432.25
+      }
+    }
+  }
+}

@@ -23,6 +23,9 @@ __pycache__/
 # ---- 已确认有问题的历史产物：保留在本机便于审计，不发布 ----
 03_实验结果/_deprecated/
 03_实验结果/_logs/
+# 脚本的原始运行日志（含 tqdm 进度条与 warning 噪声，需要时本地重跑生成）
+03_实验结果/prob/_run.log
+03_实验结果/calib/_fit.log
 
 # ---- 已被 v3 取代的 CALCE 缓存 ----
 01_源代码/data/processed/calce_capacity.parquet

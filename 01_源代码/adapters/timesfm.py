@@ -115,5 +115,50 @@ class TimesFMForecaster(Forecaster):
             arr = arr[None, :]
         return [arr[i, :horizon] for i in range(arr.shape[0])]
 
+    def supports_quantiles(self) -> bool:
+        # 2.5 有连续分位数头；2.0/1.x 的第二个返回值在部分版本里是 None，
+        # 所以统一在 predict_quantiles_batch 里判空，不支持就明确抛错。
+        self._load()
+        return self.api == "2.5"
+
+    def predict_quantiles_batch(self, contexts: Sequence[np.ndarray], horizon: int,
+                                levels: Sequence[float] = (0.1, 0.5, 0.9)):
+        """从 TimesFM 的连续分位数头取 (B, Q, H)。
+
+        2.5 的 forecast 返回 (point, quantile)，quantile 形状 (B, H, Q) 且
+        **分位数层是模型固定的**（不是我们传的 levels）。做法：先取模型自己的
+        分位数层，再用线性插值到请求的 levels。插值只在**层间**做，
+        不改变模型输出的任何数值。
+        """
+        self._load()
+        if self.api != "2.5":
+            raise NotImplementedError(
+                f"timesfm API {self.api} 不返回可用的分位数（第二返回值为 None）")
+        inputs = [self._truncate(c) for c in contexts]
+        point, quant = self._model.forecast(horizon=horizon, inputs=inputs)
+        if quant is None:
+            raise NotImplementedError("timesfm 2.5 未返回分位数张量")
+
+        q = np.asarray(quant, dtype=float)                  # (B, H, Q_model)
+        lv_req = [float(x) for x in levels]
+        # 模型固定的分位数层（timesfm 2.5 的连续头默认十分位数）
+        qm = getattr(self._model, "quantile_levels", None)
+        if qm is None:
+            qm = np.linspace(0.1, 0.9, q.shape[-1])
+        qm = np.asarray(qm, dtype=float)
+        if q.ndim == 2:                                     # 单条输入被压成 2 维
+            q = q[None, ...]
+        if q.shape[-1] != len(qm):
+            # 形状对不上时宁可明确失败，也不猜
+            raise RuntimeError(f"timesfm 分位数形状 {q.shape} 与层数 {len(qm)} 不符")
+
+        # (B, H, Q_model) -> 逐 (B,H) 插值到请求层 -> (B, Q_req, H)
+        out = np.empty((q.shape[0], len(lv_req), q.shape[1]), dtype=float)
+        for b in range(q.shape[0]):
+            # q[b] 是 (H, Q_model)：对每个 horizon 步，沿"层"轴插值到请求层
+            out[b] = np.stack([np.interp(lv_req, qm, q[b, h, :])
+                               for h in range(q.shape[1])], axis=1)
+        return out
+
     def predict(self, context: np.ndarray, horizon: int) -> np.ndarray:
         return self.predict_batch([context], horizon)[0]

@@ -27,7 +27,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Sequence
 
 # ⚠️ Windows 专有坑：pandas / pyarrow 只要**先于** torch 导入，torch 就会报
 #     OSError: [WinError 1114] 动态链接库(DLL)初始化例程失败 (c10.dll)
@@ -49,12 +49,14 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
 from adapters import (NotInstalledError, get_forecaster,      # noqa: E402
-                      rolling_forecast, rolling_forecast_batch)
+                      rolling_forecast, rolling_forecast_batch,
+                      rolling_forecast_quantiles_batch)
 from configs.config import (DATASETS, PROTOCOL, RESULTS_ROOT,  # noqa: E402
                             check_dataset)
 from data.loaders import load_dataset                           # noqa: E402
 from data.protocol import clean_series, relative_split          # noqa: E402
-from evaluation.metrics import (lifetime_metrics, summarize,    # noqa: E402
+from evaluation.metrics import (DEFAULT_LEVELS, lifetime_metrics,  # noqa: E402
+                                probabilistic_metrics, summarize,
                                 trajectory_metrics)
 
 # 写进 summary.json 的包版本（验收标准 #5：可追溯）
@@ -86,7 +88,26 @@ def parse_args():
     p.add_argument("--seed", type=int, default=None,
                    help="采样型基础模型的随机种子（默认用适配器内置值；多种子方差分析时显式指定）")
     p.add_argument("--quiet", action="store_true")
+    p.add_argument("--quantiles", type=float, nargs="*", default=None,
+                   metavar="LEVEL",
+                   help="分位数层，如 --quantiles 0.1 0.5 0.9（默认模型支持时就开）。"
+                        "传空串 --quantiles '' 可显式关闭。基线不支持分位数，自动跳过。")
     return p.parse_args()
+
+
+def resolve_levels(args) -> List[float]:
+    """--quantiles 的三种形态：不给=None（模型支持则用默认层）、
+    给数字=用这些层、给空串=显式关闭。"""
+    if args.quantiles is None:
+        return list(DEFAULT_LEVELS)
+    if len(args.quantiles) == 0:
+        return []
+    lv = sorted(float(x) for x in args.quantiles)
+    if not 0.0 < lv[0] or lv[-1] >= 1.0:
+        raise SystemExit(f"分位数层必须在 (0,1) 开区间内：{lv}")
+    if len(set(lv)) != len(lv):
+        raise SystemExit(f"分位数层有重复：{lv}")
+    return lv
 
 
 def resolve_model_names(args) -> List[str]:
@@ -153,7 +174,8 @@ def build_tasks(cells: dict, meta: dict, fracs: List[float],
     return tasks
 
 
-def run_model(model, tasks: List[Task], chunk: int, quiet: bool):
+def run_model(model, tasks: List[Task], chunk: int, quiet: bool,
+              levels: Sequence[float] = DEFAULT_LEVELS):
     """批量推理 + 逐任务算指标。单个任务失败只记 error，不拖垮整轮。
 
     ⚠️ 按 `frac` **分组**推理，不把不同起点混进同一批。
@@ -162,10 +184,17 @@ def run_model(model, tasks: List[Task], chunk: int, quiet: bool):
     实测 NASA 上 B0005@0.5 在 4 任务批里 MAE 0.80、在 12 任务批里 1.03，
     直接导致主表（单起点）与敏感性表（三起点）的 0.5 行对不上。
     分组后同一 frac 的批组成只取决于该 split 的 cell 集合，两次跑才可比。
+
+    分位数：模型 supports_quantiles() 时**额外**跑一遍分位数递归，
+    与点预测共用同一批任务、同一分组、同一个 chunk。两条链路互不影响：
+    点预测的口径与 v1 逐位一致（否则已发表数字就废了）。
     """
     t0 = time.time()
     preds: List[np.ndarray | None] = [None] * len(tasks)
     errors: Dict[int, str] = {}
+    # (Q, H) 分位数预测；模型不支持或没开 --quantiles 时保持 None
+    qpreds: List[np.ndarray | None] = [None] * len(tasks)
+    want_q = bool(levels) and model.supports_quantiles()
 
     groups: Dict[float, List[int]] = {}
     for i, t in enumerate(tasks):
@@ -192,6 +221,20 @@ def run_model(model, tasks: List[Task], chunk: int, quiet: bool):
                 except Exception as e2:
                     errors[i] = f"{type(e2).__name__}: {e2}"
 
+        if not want_q:
+            continue
+        # 分位数链路：同样按 frac 分组；失败只影响概率指标，不影响点指标
+        try:
+            qout = rolling_forecast_quantiles_batch(model, contexts, horizons,
+                                                    chunk, list(levels))
+            for j, i in enumerate(idxs):
+                if i not in errors:
+                    qpreds[i] = qout[j]
+        except Exception as e:
+            if not quiet:
+                print(f"      分位数推理失败（frac={frac:.2f}，{type(e).__name__}: {e}），"
+                      f"该轮概率指标留空")
+
     elapsed = time.time() - t0
     records = []
     for i, t in enumerate(tasks):
@@ -201,10 +244,15 @@ def run_model(model, tasks: List[Task], chunk: int, quiet: bool):
             continue
         pred = preds[i]
         rec = {"cell_id": t.cell_id, "start_frac": t.frac,
-               "n_context": len(t.context), "n_horizon": len(t.truth)}
+               "n_context": len(t.context), "n_horizon": len(t.truth),
+               "start_cycle": int(t.start_cycle)}
         rec.update(trajectory_metrics(pred, t.truth, t.truth_smooth))
         rec.update(lifetime_metrics(pred, t.cycles, t.truth, t.start_cycle,
                                     PROTOCOL["eol_threshold"], eol_true=t.eol_true))
+        if qpreds[i] is not None:
+            rec.update({k: v for k, v in probabilistic_metrics(
+                qpreds[i], t.truth_smooth, levels).items()
+                if k not in ("q_lo", "q_hi")})
         records.append(rec)
     df = pd.DataFrame(records)
     # 严格按列判断，避免 df.get("error", 空Series) 造成索引错位（原版 bug）
@@ -212,7 +260,7 @@ def run_model(model, tasks: List[Task], chunk: int, quiet: bool):
         ok_mask = df["error"].isna()
     else:
         ok_mask = pd.Series(True, index=df.index)
-    return df, ok_mask, elapsed, preds
+    return df, ok_mask, elapsed, preds, qpreds
 
 
 def fmt_eol(summ: dict, n_total: int) -> str:
@@ -249,6 +297,7 @@ def main():
 
     names = resolve_model_names(args)
     _preimport_torch(names)
+    levels = resolve_levels(args)
 
     split = None if (args.dataset != "mit" or args.split == "all") else args.split
     print(f"[1/3] 加载数据 {args.dataset} (split={split or 'all'}) ...", flush=True)
@@ -283,7 +332,8 @@ def main():
         print(f"[2/3] 推理：{model.name}"
               + (f"（上下文上限 {model.max_context}）" if args.max_context else ""), flush=True)
         try:
-            df, ok_mask, elapsed, preds = run_model(model, tasks, args.chunk, args.quiet)
+            df, ok_mask, elapsed, preds, qpreds = run_model(
+                model, tasks, args.chunk, args.quiet, levels)
         except NotInstalledError as e:
             if len(names) > 1:
                 print(f"      跳过 {model.name}：{e}")
@@ -305,8 +355,28 @@ def main():
             key = f"{t.cell_id}@{t.frac}"
             pack[key] = np.vstack([np.asarray(p, float), t.truth])
             pack[f"{key}|ctx"] = np.asarray(t.context, float)   # 画轨迹图用
+            # 循环号 + 起点：EOL 重设计（RUL 相对误差、过冲循环数）要用
+            pack[f"{key}|cyc"] = np.asarray(t.cycles, float)
         if pack:
             np.savez_compressed(out_root / f"predictions_{tag}.npz", **pack)
+        # 分位数单独一个文件：与点预测解耦，老工具读不到就自动退回点口径
+        if any(q is not None for q in qpreds):
+            qpack = {}
+            for t, q in zip(tasks, qpreds):
+                if q is None:
+                    continue
+                qpack[f"{t.cell_id}@{t.frac}"] = np.asarray(q, dtype=float)
+            if qpack:
+                qpack["__levels__"] = np.asarray(levels, dtype=float)
+                np.savez_compressed(out_root / f"quantiles_{tag}.npz", **qpack)
+                n_cross = int(getattr(model, "n_quantile_crossings", 0))
+                msg = (f"      分位数已保存 -> quantiles_{tag}.npz（层 {levels}，"
+                       f"CRPS/PICP/MPIW 见 per_cell_{tag}.csv）")
+                if n_cross:
+                    msg += (f"\n      ⚠️ 分位数穿越 {n_cross} 处已做保序修复"
+                            f"（以模型中位数为锚，中位数逐位不变，点预测不受影响）")
+                if not args.quiet:
+                    print(msg, flush=True)
 
         ok = df[ok_mask]
         model_meta[tag] = model.info()
@@ -330,6 +400,7 @@ def main():
         "split": split, "start_fracs": args.start_fracs, "chunk": args.chunk,
         "max_context_override": args.max_context or None,
         "seed_override": args.seed,
+        "quantile_levels": levels or None,
         "protocol": PROTOCOL, "n_cells": len(cells), "n_tasks": len(tasks),
         "model_info": model_meta, "packages": package_versions(),
         "python": platform.python_version(), "platform": platform.platform(),

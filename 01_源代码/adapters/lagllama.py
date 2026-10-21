@@ -16,7 +16,8 @@ from typing import List, Sequence
 
 import numpy as np
 
-from adapters.base import Forecaster, NotInstalledError
+from adapters.base import (Forecaster, NotInstalledError,  # noqa: E402
+                           quantiles_from_samples)
 from configs.config import MODELS_DIR
 
 
@@ -132,6 +133,33 @@ class LagLlamaForecaster(Forecaster):
         if len(fcs) != len(entries):
             raise RuntimeError(f"Lag-Llama 返回 {len(fcs)} 条预测，期望 {len(entries)}")
         return [np.asarray(fc.quantile(0.5), dtype=float)[:horizon] for fc in fcs]
+
+    def supports_quantiles(self) -> bool:
+        return True
+
+    def predict_quantiles_batch(self, contexts: Sequence[np.ndarray], horizon: int,
+                                levels: Sequence[float] = (0.1, 0.5, 0.9)):
+        """用同一批样本算分位数，返回 (B, Q, H)。与 Moirai 同构（gluonts SampleForecast）。"""
+        self._load()
+        from gluonts.dataset.common import ListDataset
+
+        if horizon > self.max_horizon:
+            raise ValueError(f"Lag-Llama 单次 horizon 上限 {self.max_horizon}，请减小 rolling_chunk")
+        entries = [{"start": "2000-01-01 00:00:00", "target": self._truncate(c)}
+                   for c in contexts]
+        ds = ListDataset(entries, freq="H")
+        self._seed_next()
+        fcs = list(self._predictor.predict(ds))
+        if len(fcs) != len(entries):
+            raise RuntimeError(f"Lag-Llama 返回 {len(fcs)} 条预测，期望 {len(entries)}")
+
+        lv = [float(x) for x in levels]
+        out = np.empty((len(fcs), len(lv), horizon), dtype=float)
+        for b, fc in enumerate(fcs):
+            # 切时间轴、保留全部样本：与 predict_batch 的 fc.quantile(0.5) 同源
+            # （细节与踩坑记录见 adapters.base.quantiles_from_samples）
+            out[b] = quantiles_from_samples(fc.samples, lv, horizon)
+        return out
 
     def predict(self, context: np.ndarray, horizon: int) -> np.ndarray:
         return self.predict_batch([context], horizon)[0]
