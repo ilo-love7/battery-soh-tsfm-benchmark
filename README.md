@@ -357,10 +357,13 @@ requirements-models.txt       模型依赖（已实测可共存的版本组合 +
 
 ## 复现性：我们踩过并修掉的坑
 
-> **已验证（两轮，均在干净克隆上）**：把仓库 `git clone` 到干净目录，不重跑任何模型、只跑汇总脚本
-> （`report.py` / `stats_significance.py` / `analyze_shrinkage.py` / `analyze_seeds.py` / `plot_fewshot.py` /
-> `figures.py` × 三库），**14 张图 MD5 与原图逐位一致**，7 个汇总产物
-> （`汇总表.csv`、`显著性检验.csv/.md`、`种子方差.csv/.md`、`汇总_衰减保留率.csv`、`结果表.md`）内容一致。
+> **已验证（三次，均在干净克隆上）**：把仓库 `git clone` 到干净目录，不带 `data/`、
+> 不带 `local_paths.py`，只跑 `bash scripts/run_matrix.sh report`（13 步：
+> 缓存指纹回归测试 + `report.py` / `stats_significance.py` / `analyze_shrinkage.py` /
+> `analyze_seeds.py` / `diag_curvature.py` × 3 / `ablate_naive_linear.py` /
+> `plot_fewshot.py` / `figures.py` × 三库），**14 张图 MD5 与原图逐位一致**，
+> 7 个汇总产物内容一致（`.md` 仅剩 `core.autocrlf` 造成的行尾差异，`git diff` 为空），
+> 缓存指纹回归测试 16/16 通过。
 > 也就是说提交的结果文件与图完全对应，中间没有手工改数，且这一致性是跨机器成立的。
 
 这部分是本项目最有价值的部分之一——**每一个坑都会让数字悄悄错掉，而且不报错**：
