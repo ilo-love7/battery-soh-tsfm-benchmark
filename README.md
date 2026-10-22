@@ -28,7 +28,7 @@
 - [在线代理：拐点能从上下文估出来，模型选择不能](#在线代理拐点能从上下文估出来模型选择不能)
 - [快速开始](#快速开始)
 - [目录结构](#目录结构)
-- [复现性：我们踩过并修掉的坑](#复现性我们踩过并修掉的坑)
+- [复现性](#复现性)
 - [局限](#局限)
 - [引用与许可](#引用与许可)
 
@@ -47,7 +47,7 @@
 | 7 | EOL 指标只在 NASA / CALCE 可用，且样本量小到**不足以支撑显著性结论**；NASA 只作方向性证据（排名随起点变化、种子 CV 30.6%，naive_linear 换整段拟合能从 6.11 降到 2.48） | NASA n=4（闸门后 3）、CALCE n=14（闸门后 8） |
 | 8 | 结论对起点与种子稳健：三个起点、三个额外种子下排名均无翻转（NASA 除外） | MIT/CALCE 种子 CV ≤ 8.7%；NASA 30.6% |
 | 9 | **区间宽度普遍只有误差量级的 4%–15%**，覆盖率因此塌到 9–22%；反过来，`MPIW/MAE ≥ 1.5` 的 6 组覆盖率都在 76–94%，中间**没有过渡样本** | `MPIW/MAE < 1.0` 的 9 组 PICP 全在 8.8–22.2%；`≥ 1.5` 的 6 组全在 76.1–94.4%（ρ=0.83） |
-| 10 | v1 的 EOL 命中率**会把失败记成满分**：lag-llama 在 MIT 上 100% 命中，其实比真值早 197 个循环就跌破 80% | 过冲 −197 循环、RUL 相对误差 0.71；改用三量后可排序 |
+| 10 | 早期版本的 EOL 命中率**会把失败记成满分**：lag-llama 在 MIT 上 100% 命中，其实比真值早 197 个循环就跌破 80% | 过冲 −197 循环、RUL 相对误差 0.71；改用三量后可排序 |
 | 11 | **2 个标量的校准头 ≈ 1 支电池上的全量微调**，且 EOL 命中率反超所有微调档位 | MIT 4.110 → 3.256（−20.8%，微调 1 支为 3.241）；EOL 0% → 47% vs 微调 5–37% |
 | 12 | 上一条的横截面规律**是相关、不是因果**：只缩放区间半宽，MIT 的 chronos-bolt 拉宽 15 倍覆盖率只到 43%，要 80% 得 113 倍（CRPS +115%）。**「太宽」倒是单标量能修好** | 9/15 组需 38–2000 倍宽度、CRPS 中位涨 465%；lag-llama@MIT 收窄 0.62× 即 80%、CRPS −25% |
 | 13 | **换模型的粒度是库、不是 cell**：拐点能只从上下文估出来，但「逐 cell 选模型」的收益天花板只有 1.7% / 0% / 20%，留一库路由 6/6 都没跑赢「两者取优」 | MIT 天花板 2.98 vs 最优单模型 3.03；CALCE 6.04 → 4.82，但留一库只能到 7.96 |
@@ -59,7 +59,7 @@
 > 校准头三方对比见 [`04_文档报告/校准头对比.md`](04_文档报告/校准头对比.md)、
 > 宽度干预与在线代理见 [`04_文档报告/区间宽度校准.md`](04_文档报告/区间宽度校准.md)
 > 与 [`04_文档报告/在线代理.md`](04_文档报告/在线代理.md)；
-> 上下文内自测（§9.5 最后一条路）见 [`04_文档报告/上下文自测.md`](04_文档报告/上下文自测.md)。
+> 上下文内自测（本基准关闭的最后一条路）见 [`04_文档报告/上下文自测.md`](04_文档报告/上下文自测.md)。
 > 所有走不通的路集中记在 [`04_文档报告/失败记录.md`](04_文档报告/失败记录.md)
 > （含「必须改什么前提才能继续」的前提表）。
 
@@ -92,7 +92,7 @@
 
 > **关于 `naive_linear`**：它只对上下文**最近 ⌊n/2⌋ 个点**做最小二乘（电池序列开头常有容量平台，
 > 纳入拟合会把斜率压平）。作者另跑了"整段拟合"变体：MIT 4.066 → 4.528、CALCE 4.623 → 6.275（本文版本更强），
-> **但 NASA 6.111 → 2.478（整段更强）**。因此 NASA 只作方向性证据；该消融与讨论见短文 §3.2 脚注。
+> **但 NASA 6.111 → 2.478（整段更强）**。因此 NASA 只作方向性证据；该消融与讨论见短文初稿 §3.2 脚注。
 
 ### 协议（写死，所有模型同口径）
 
@@ -222,8 +222,7 @@ Moirai / Lag-Llama 是采样解码）。本项目把分位数一起落盘，报 
   （NASA 的 chronos 1.91、lag-llama 0.77–1.39）CRPS 才开始明显区别于 MAE。
   更要紧的是：**CRPS 不能当校准目标**——它奖励"更窄"，11/15 个组合的最优 w 都退化到
   `w→0`。只报 CRPS 会系统性掩盖"区间太窄"这个失败模式，所以本项目同时报 PICP 与 MPIW。
-  完整表见 [`04_文档报告/执行记录-2026-10-20.md`](04_文档报告/执行记录-2026-10-20.md) §10.1；
-  宽度干预实验见 [`04_文档报告/区间宽度校准.md`](04_文档报告/区间宽度校准.md)；
+  完整表见 [`04_文档报告/区间宽度校准.md`](04_文档报告/区间宽度校准.md)；
   EOL 三量表见 [`04_文档报告/EOL重设计.md`](04_文档报告/EOL重设计.md)。
 
 > ⚠️ **CRPS ≥ |y − q50| 并不普遍成立**，所以"CRPS 小于同口径 MAE"不是 bug 判据。
@@ -232,9 +231,10 @@ Moirai / Lag-Llama 是采样解码）。本项目把分位数一起落盘，报 
 > 固定分布下 CRPS 在中位数处取全局极小（离散分位函数下是一段平台）。
 > 判断概率指标可信与否，只能查**分位数链路与点预测链路是否同一条轨迹**：
 > `run_benchmark.py` 已加闸门 `metrics.median_deviation()`，当前 18 个组合
-> 全部 `max|point − q50| = 0.0e+00`（见坑表第 17、18 条）。
+> 全部 `max|point − q50| = 0.0e+00`（分位数保序修复与采样链路的对齐，见
+> [`04_文档报告/执行记录-2026-10-20.md`](04_文档报告/执行记录-2026-10-20.md) 坑表第 17、18 条）。
 
-**EOL 指标重设计**：v1 的"命中率"在 MIT 上恒为 0%（数据在 EOL 处截断），在
+**EOL 指标重设计**：早期版本的"命中率"在 MIT 上恒为 0%（数据在 EOL 处截断），在
 lag-llama 上恒为 100%——两个常数都不含信息量。补三个量后（`RUL 相对误差` /
 `带符号过冲循环数` / `未穿越裕度`）才能看出：lag-llama 的 100% 命中其实是
 **比真值早 197 个循环就跌破 80%**（过冲 −197、RUL 相对误差 0.71），
@@ -375,7 +375,7 @@ python 01_源代码/analyze_calibration.py
 2.98（**−1.7%**）；NASA 是 0%；只有 CALCE 有 20% 空间（6.04 → 4.82）。而留一库学到的规则
 在 CALCE 上只能做到 7.96，还不如直接线性外推的 6.04。
 
-所以 §9.6 设想的「按上下文曲率路由 / 加权集成」在本项目的数据上**没有可赚的钱**：
+因此「按上下文曲率路由 / 加权集成」这类方法在本项目的数据上**没有可赚的钱**：
 模型优劣是**库级**现象，不是 cell 级现象。可部署的落点是：拿到一个新库，先算上下文的
 `drop_ctx` 与 `slope_all`——「已经掉了 15% 以上、后面基本线性」的库（CALCE / NASA 型）
 用线性外推，「只掉了 1–2%、拐点还在前方」的库（MIT 型）用基础模型。
@@ -388,7 +388,7 @@ python 01_源代码/online_proxy.py     # 零推理，只读已落盘的 predict
 
 ### 最后一条路也关掉了：上下文内自测
 
-特征回归只能估量级，那就还剩一条理论上最有希望的路——**conformal 式的上下文内自测**：
+特征回归只能估量级，于是还剩最后一条理论上最有希望的路——**conformal 式的上下文内自测**：
 把上下文切两段，前段当输入、后段当已知真值，跑同一个模型，在伪任务上求出 `w_hat` 再搬到真实任务。
 它天然对齐了「同一个模型、同一条序列、同一种误差结构」。
 
@@ -584,9 +584,9 @@ bash scripts/run_matrix.sh report   # 纯汇总：report / 显著性 / 机制 / 
 ├── analyze_eol2.py          EOL 重设计汇总 → 汇总_EOL重设计.csv + EOL重设计.md
 ├── analyze_calibration.py   零样本 / 2 参数 / 微调三方对比 → 校准头对比.md
 ├── calibrate_width.py       区间宽度干预（绕中位数缩放半宽，零模型重跑）→ 区间宽度校准.md
-├── online_proxy.py          §9.5 在线代理：9 个上下文特征 → 拐点 / 模型选择 / 宽度（零推理）
-├── diag_context_range.py    §9.4 可行性核查：上下文长度分布 + 夹到 512 的口径影响（零推理）
-├── conformal_w.py           §9.5 最后一条路：上下文内自测（conformal 式伪任务）→ 上下文自测.md
+├── online_proxy.py          在线代理：9 个上下文特征 → 拐点 / 模型选择 / 宽度（零推理）
+├── diag_context_range.py    上下文长度可行性核查：长度分布 + 夹到 512 的口径影响（零推理）
+├── conformal_w.py           上下文内自测（conformal 式伪任务）→ 上下文自测.md
 ├── analyze_seeds.py         多种子方差与排名翻转检查 → 种子方差.md
 ├── diag_curvature.py        knee_ratio（数据侧衰减加速比）
 ├── ablate_naive_linear.py   naive_linear 拟合窗口消融（⌊n/2⌋ vs 整段）
@@ -607,7 +607,7 @@ bash scripts/run_matrix.sh report   # 纯汇总：report / 显著性 / 机制 / 
   └── conformal_w/           上下文内自测（horizon 不变性 + 逐 cell w_hat / w_oracle / 三种 PICP）
 04_文档报告/                  短文初稿、方案、执行记录、结果表、figures、_history（历史材料）
 scripts/                      setup_env.{sh,bat} + run_matrix.sh + run_prob.sh + run_cal.sh
-                             + check_docs.py（文档链接与锚点检查，report 链会跑）
+                             + check_docs.py（文档链接与锚点）+ check_figures.py（图一致性）
 .github/workflows/repro.yml    CI：干净克隆上跑测试 + 汇总链，断言图与产物未被改动
 requirements-core.txt         核心依赖（基线所需）
 requirements-models.txt       模型依赖（已实测可共存的版本组合 + 踩坑记录）
@@ -615,70 +615,24 @@ requirements-models.txt       模型依赖（已实测可共存的版本组合 +
 
 ---
 
-## 复现性：我们踩过并修掉的坑
+## 复现性
 
-> **已验证（多次，均在干净克隆上）**：把仓库 `git clone` 到干净目录，不带 `data/`、
-> 不带 `local_paths.py`，只跑 `bash scripts/run_matrix.sh report`（22 步：
-> 五项回归测试 + `report.py` / `stats_significance.py` /
-> `analyze_shrinkage.py` / `analyze_seeds.py` / `analyze_eol2.py` /
-> `analyze_calibration.py` / `calibrate_width.py` / `online_proxy.py` /
-> `conformal_w.py --skip-inference` / `diag_context_range.py` /
-> `diag_curvature.py` × 3 / `ablate_naive_linear.py` /
-> `check_docs.py` / `plot_fewshot.py` / `figures.py` × 三库），
-> **14 张图 MD5 与原图逐位一致**，
-> 5 个汇总产物内容一致（`.md` 仅剩 `core.autocrlf` 造成的行尾差异，`git diff` 为空），
-> 回归测试 214 项全过。
-> 也就是说提交的结果文件与图完全对应，中间没有手工改数，且这一致性是跨机器成立的。
->
-> **这条性质现在由 CI 守**（`.github/workflows/repro.yml`）：每次 push 到 `main`
-> 都在干净克隆上重跑测试 + 汇总链，然后断言图与已提交版本一致、`git diff` 为空。
-> ⚠️ **图在 CI 上用像素级比对，不用 MD5**：图是在 Windows 上生成的，CI 跑在 Linux，
-> FreeType / zlib 版本不同会让 14/14 张图的字节必然不同（实测，且依赖版本完全一致），
-> 但**像素 13/14 张完全相同**，只有 `fig5_shrinkage.png` 有 28 像素、最大差 1/255
-> 的抗锯齿噪声。因此 `scripts/check_figures.py --pixels` 用
-> 「不同像素比例 ≤ 0.05% 且单通道最大差 ≤ 2」作判据，每张图的实际数字都会打印。
-> `matplotlib` 仍钉在 3.11.2——它决定图的**内容**，漂移会让像素成片变，那才是真实信号。
-> 同平台的字节级复现在作者机器上做：`python scripts/check_figures.py`（默认字节级），
-> `--pixels` 是跨平台口径，`--report` 两种粒度都报不判定。
->
-> 后加入的七步（`analyze_eol2` / `analyze_calibration` / `calibrate_width` /
-> `online_proxy` / `conformal_w --skip-inference` / `diag_context_range` /
-> `check_docs`）不产图，
-> 只读已提交的 `03_实验结果/prob`、`calib` 与 `predictions_*.npz`，
-> 所以上面的图一致性与它们独立：
-> `calibrate_width.py` 连跑两轮 + 干净克隆重跑一次，17 个产物 CSV 的 MD5 逐位相同
-> （克隆里需自带 CALCE 解析缓存 `01_源代码/data/processed/calce_capacity_v3.parquet`，
-> 否则会先花 10–20 分钟重解析 27 个 zip）；`online_proxy.py`、`diag_context_range.py`
-> 与 `conformal_w.py --skip-inference` 各连跑两轮，产物 MD5 逐位相同。
-> 上面 4 个需要原始数据的步骤在没有数据集的机器上会打印 `[跳过]` 并退出 0，
-> 不会用空结果覆盖已提交产物。
+所有提交的数字与图都由管道产出，没有手工改数：
 
-这部分是本项目最有价值的部分之一——**每一个坑都会让数字悄悄错掉，而且不报错**：
+```bash
+bash scripts/run_matrix.sh report    # 22 步：汇总 + 显著性 + 机制 + 种子方差 + 消融 + 出图
+```
 
-| # | 坑 | 症状 | 修法 |
-|---|---|---|---|
-| 1 | 采样类模型**没有设种子** | Lag-Llama 在 NASA 上重跑一次从 7.73 变成 8.70（+12.6%） | 每次采样前 `manual_seed(seed + call_count)`，调用顺序确定 ⇒ 可复现且各 chunk 不复用同一噪声 |
-| 2 | 结果**依赖 batch 组成** | NASA B0005@0.5：4 个任务一批时 0.802，12 个任务一批时 1.034 | `run_model` 按 `start_frac` 分组后再组 batch，使某格永远落在同一组成的批里 |
-| 3 | `summary.json` 按**模型名**去重合并 | 分两次跑 CALCE 敏感性（0.4/0.5 然后 0.6），前一次的 frac 被抹掉 | 改成按 `模型@起点` 完整键去重 |
-| 4 | fig4 三个库**生成同一张图**（MD5 相同） | 敏感性图的运行目录是全局常量，只指向 MIT | 改为按数据集前缀索引；缺数据时打印"跳过（不生成假图）" |
-| 5 | Δ 的点估计**落在自己的 CI 之外** | +0.46 落在 [+0.57, +0.89] 里 | 点估计改用"配对差的中位数"，与 CI 同源 |
-| 6 | EOL 分母算错 | NASA 说 4/4，实际 B0006 起点 72.1% < 80%，被闸门剔除 ⇒ 应为 3/4 | 修正闸门逻辑并全文更正 |
-| 7 | 上下文长度**不公平** | Bolt 用 2048、T5 用 512，差距里混进了上下文长度 | 主表统一 `--max-context 512`，另保留原生长度做对照 |
-| 8 | Windows 上 `pandas` 先于 `torch` 导入 | `OSError [WinError 1114] c10.dll 初始化例程失败` | `run_benchmark.py` 顶部按需预导入 torch |
-| 9 | 依赖缺失时**静默返回随机数** | 原版脚本"看起来跑成功了"，其实全是噪声 | 依赖缺失一律抛 `NotInstalledError`，禁止兜底 |
-| 10 | 汇总表用**文件 mtime** 判新旧 | 别人 clone 下来跑 `report.py`，`汇总表.csv` 和仓库里存的对不上：NASA chronos 的「目录/耗时」变成 `_det_b`，naive_linear 的 EOL 列从 20.6/3 变成 14.3/4（旧副本顶掉）。git 不保留 mtime，"保留最新"退化成"取决于检出顺序" | 改判 `summary.json` 里的 `meta["timestamp"]`（随内容一起提交，跨机器稳定），时间相同则保留 `sorted(glob)` 先到者 |
-| 11 | `scripts/run_matrix.sh` 与**已发布结果对不上** | 三个缺口：MIT ctx512 那格缺 `moirai/lag-llama/arima/refactor` 四个模型；MIT 敏感性段的模型集是 `chronos-bolt,chronos,...` 而实际发布目录是 `mit-zero-chronos-bolt,naive_linear,exp_decay-sens`；report 段不跑 few-shot 与消融，`fig6` 永远出不来 | 脚本补齐模型集，并新增 `extra`（few-shot 训练 + 微调评测 + 跨库迁移 + `ablate_naive_linear.py`）与 `report`（纯汇总出图）两段；目录命名就是 `figures.py` / `analyze_seeds.py` 的事实标准 |
-| 12 | CALCE **parquet 缓存遮蔽 `CALCE_DIR`** | 缓存只看 `exists()` 就复用，不看指向哪个目录：换一份 zip 或改电压阈值，拿到的还是旧缓存里的 14 支，且**不报错** | 缓存带"来源指纹"（zip 清单 + 名字/大小/mtime + 阈值）写进 `calce_capacity_v3.meta.json`，不一致就重新解析；同时修复"旧 `load_calce` 定义覆盖新定义"导致指纹一度不生效的问题。实测重解析后 14 支的循环数与容量和已发表 `CALCE_UMD.md` 逐位一致 |
-| 13 | 采样型适配器**切错轴**：`samples[:horizon]` | Moirai / Lag-Llama 概率指标全空（`could not broadcast (3,64) into (3,21)`）；更隐蔽的是 `horizon < num_samples` 时**不报错但语义错**——只用前 horizon 条样本算分位数，中位数与 `fc.quantile(0.5)` 不一致 | 抽成 `adapters.base.quantiles_from_samples()`（切时间轴 `[:, :horizon]`、保留全部样本），两个适配器共用 + 10 项断言 |
-| 14 | 包装器**上限不透传** | `CalibratedForecaster` 只在构造时拷贝 `max_context`，`run_benchmark` 写 `model.max_context = 512` 时底层仍是 2048 ⇒ 校准跑用了 2 倍上下文，与基线不同口径（实测差 0.2 SOH%） | `max_context` / `max_horizon` 改成 property，setter 直写 `base`；回归测试锁死"设包装器必须夹紧底层" |
-| 15 | 指标**注释与公式符号相反** | `eol_overshoot_cyc = eol_pred − eol_true`，正 = 偏晚，注释却写"正 = 偏早" | 按公式订正注释，并在 `metrics.py` / `analyze_eol2.py` 两处同步；这类"公式对、注释错"比代码 bug 更危险——下游会照注释解读 |
-| 16 | 分位数**穿越**用 `np.sort` 修 | 排序会换掉模型的 q50，分位数递归与点预测的中位数差 0.012 SOH%，`predictions_*.npz` 不再逐位一致 | 以模型中位数为锚做保序修复（下侧 `min(cummax, q50)`、上侧 `max(cummax, q50)`），修复后中位数偏差 0.000e+00 |
-| 17 | TimesFM 分位数层**错位一格** | 2.5 的分位数张量是 `len(quantiles)+1 = 10` 列：第 0 列是空槽（不参与保序修复、不被连续头覆写、翻转等变时也不翻转），9 个分位数在第 1..9 列，第 5 列兼作点预测（官方 `return full_forecast[..., 5], full_forecast`）。写成 `linspace(0.1, 0.9, 10)` 后请求 0.5 落在「真 q0.4 与真 q0.5 之间」⇒ 中位数被换掉、区间被夹窄。**分位数链路跑出另一条轨迹，CALCE 最大分叉 10.93 SOH%**，PICP 低到 3.7%（真值 10.9%）、NASA 10.2%（真值 76.2%），而错的数字**静默写进了 `per_cell_*.csv`** | 新增 `_quantile_layout()`：从模型读 `config.quantiles` + `aridx`，按 `列数 == 层数+1` 判"有空槽"布局、跳过第 0 列、校验中位数列必须与 `aridx` 对齐，对不上就报错不猜；请求层与模型层重合时直接取原列 ⇒ q50 与点预测逐位相同。另加流水线闸门 `metrics.median_deviation()`（超 1e-9 告警并写进 `summary.json`） |
-| 18 | 采样型模型**两条链路各采一次样** + **分位数取法与点预测不同** | 两个独立缺陷叠加：(a) 种子由全局单调计数器推进，点预测链路用掉 1..N、分位数链路接着用 N+1..2N ⇒ 同一个 chunk 采到**不同样本**；(b) 即使样本相同，`np.quantile(samples, 0.5)`（线性插值）也**不等于** gluonts `fc.quantile(0.5)`（`round((S−1)q)` 取最近样本、不插值），同一批样本差半个样本间距 0.0157 SOH%。合起来 moirai 首 chunk 差 0.062、lag-llama 差 4.38，全段放大到 32–78 SOH% | (a) 基类加 `rng_checkpoint()` / `rng_restore()`，`run_model` 在每组点预测链路前取 checkpoint、分位数链路前恢复 ⇒ 两遍同种子；因为两条批量递归的调用序列 1:1 对应，恢复后计数器恰好回到原值，**点预测链路与主表逐位不变**（`predictions_*.npz` 一个字节都没动）。(b) 抽 `adapters.base.quantiles_from_forecast(fc, levels, horizon)`，内部只用 `fc.quantile()` 这同一个访问器 |
-| 19 | **汇总链吞掉所有失败**：`run_matrix.sh report` 的 `an()` 不记录退出码 | 21 步里任何一步崩了（包括缺数据、语法错、import 失败），整条链照样 `exit 0`。2026-10-22 干净克隆演练时 4 个步骤缺数据各返回 1，而链报成功——**从退出码上完全看不出来** | `set -o pipefail` + 逐步记录成败，收尾打印「N 成功 / M 失败」并有失败时 `exit 1`；另加 `SOFT_MISSING_DATA=1` 让缺数据变成显式的「跳过（exit 0）」。已验证：注入一个必失败步骤后链返回 1 且其余步骤照常跑完 |
-| 20 | **文档腐坏没有任何测试会抓** | README 的目录锚点曾全部失效（章节标题改过、锚点没跟着改），断链同样只靠人眼发现 | 新增 `scripts/check_docs.py`：检查 README 与 `04_文档报告/*.md` 的相对链接与锚点，`report` 链与 CI 都会跑；已反向验证能抓到人为插入的断链与失效锚点 |
-
-细节见 [`04_文档报告/执行记录-2026-10-20.md`](04_文档报告/执行记录-2026-10-20.md)。
+- **CI 每次 push 都在干净克隆上重跑**（[`.github/workflows/repro.yml`](.github/workflows/repro.yml)）：
+  214 项回归测试 + 22 步汇总链 + 13 个文档的链接与锚点检查，然后断言图与已提交版本一致、
+  文本产物零改动。徽章见页面顶部。
+- **没有原始数据也能跑 report**：4 个需要数据集的步骤会打印 `[跳过]` 并退出 0，
+  不会用空结果覆盖已提交产物；有数据时它们照常运行。
+- **图的一致性分两个口径**：同平台要求字节级一致（`python scripts/check_figures.py`），
+  跨平台只要求像素级一致（`--pixels`）——FreeType / zlib 差异会让 PNG 字节必然不同，
+  这一点由 CI 首次运行实测确认。
+- 复现过程中修掉的 20 个坑（每一个都会让数字悄悄错掉、而且不报错）完整记在
+  [`04_文档报告/执行记录-2026-10-20.md`](04_文档报告/执行记录-2026-10-20.md)，此处不展开。
 
 ---
 
@@ -740,4 +694,4 @@ requirements-models.txt       模型依赖（已实测可共存的版本组合 +
 
 ---
 
-*最后更新：2026-10-21 ｜ 短文初稿见 [`04_文档报告/短文初稿-v1.md`](04_文档报告/短文初稿-v1.md)*
+*最后更新：2026-10-22 ｜ 短文初稿见 [`04_文档报告/短文初稿-v1.md`](04_文档报告/短文初稿-v1.md) ｜ 完整过程记录见 [`04_文档报告/执行记录-2026-10-20.md`](04_文档报告/执行记录-2026-10-20.md)*
