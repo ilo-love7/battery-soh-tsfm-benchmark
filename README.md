@@ -630,9 +630,12 @@ requirements-models.txt       模型依赖（已实测可共存的版本组合 +
 > 也就是说提交的结果文件与图完全对应，中间没有手工改数，且这一致性是跨机器成立的。
 >
 > **这条性质现在由 CI 守**（`.github/workflows/repro.yml`）：每次 push 到 `main`
-> 都在干净克隆上重跑测试 + 汇总链，然后断言 14 张图 MD5 未变、`git diff` 为空。
-> 注意 PNG 的 tEXt 块里嵌了 `Matplotlib version`，所以 CI 把 matplotlib 钉在
-> 3.11.2（产出已提交图的那个版本）；升级它会让门禁报警，那是真实信号。
+> 都在干净克隆上重跑测试 + 汇总链，然后断言图与已提交版本一致、`git diff` 为空。
+> ⚠️ **图在 CI 上用像素级比对，不用 MD5**：图是在 Windows 上生成的，CI 跑在 Linux，
+> FreeType / zlib 版本不同会让 14/14 张图的字节必然不同（实测，且依赖版本完全一致），
+> 但像素不变。`matplotlib` 仍钉在 3.11.2——它决定图的**内容**，漂移会让像素也变。
+> 同平台的字节级复现在作者机器上做：`python scripts/check_figures.py`（默认字节级），
+> `--pixels` 是跨平台口径，`--report` 两种粒度都报不判定。
 >
 > 后加入的七步（`analyze_eol2` / `analyze_calibration` / `calibrate_width` /
 > `online_proxy` / `conformal_w --skip-inference` / `diag_context_range` /
