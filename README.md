@@ -7,6 +7,7 @@
 ![license](https://img.shields.io/badge/license-MIT-green)
 ![models](https://img.shields.io/badge/foundation%20models-5-orange)
 ![cells](https://img.shields.io/badge/evaluated%20cells-61-red)
+[![repro](https://github.com/ilo-love7/battery-soh-tsfm-benchmark/actions/workflows/repro.yml/badge.svg)](https://github.com/ilo-love7/battery-soh-tsfm-benchmark/actions/workflows/repro.yml)
 
 把 Chronos、TimesFM、Moirai、Lag-Llama 当作**不认识电池的陌生人**：只看一段容量衰减历史、
 **零训练、零微调**，去预测剩余寿命与未来 SOH，并与 naive_last / naive_linear / exp_decay / ARIMA
