@@ -595,3 +595,17 @@ If this benchmark is useful to you:
 ---
 
 *Last updated: 2026-10-22 · Short paper draft: [`04_文档报告/短文初稿-v1.md`](04_文档报告/短文初稿-v1.md) · Full execution log: [`04_文档报告/执行记录-2026-10-20.md`](04_文档报告/执行记录-2026-10-20.md)*
+
+## Related repositories
+
+This repository is part of a set of work on batteries and transport modelling by the same author:
+
+| Repository | What it covers |
+|---|---|
+| [battery-cathode-ml](https://github.com/ilo-love7/battery-cathode-ml) | Cathode material screening: band gap, formation energy, voltage, capacity + uncertainty and multi-objective decisions |
+| [battery-lifetime-guide](https://github.com/ilo-love7/battery-lifetime-guide) | From-scratch reproduction of Severson et al. 2019 (cycle-life prediction), crash scenes included |
+| [battery-soh-tsfm-benchmark](https://github.com/ilo-love7/battery-soh-tsfm-benchmark) | Do zero-shot time-series foundation models beat linear extrapolation? Three-dataset SOH benchmark |
+| [battery-ecm-rul](https://github.com/ilo-love7/battery-ecm-rul) | Thevenin ECM parameter identification + early cycle-life prediction + PyBaMM simulation |
+| [drift-diffusion-pn-junction](https://github.com/ilo-love7/drift-diffusion-pn-junction) | Self-contained 1D drift–diffusion–Poisson solver with three-layer verification |
+| [car-following](https://github.com/ilo-love7/car-following) | Car-following traffic modelling toolkit (7 models, stability, calibration, lane changing, EV energy) |
+| [project-packer](https://github.com/ilo-love7/project-packer) | Turning real project work into interview-defensible experience (fact dossier + question tree) |

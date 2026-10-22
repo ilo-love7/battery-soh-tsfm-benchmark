@@ -696,3 +696,17 @@ bash scripts/run_matrix.sh report    # 22 步：汇总 + 显著性 + 机制 + �
 ---
 
 *最后更新：2026-10-22 ｜ 短文初稿见 [`04_文档报告/短文初稿-v1.md`](04_文档报告/短文初稿-v1.md) ｜ 完整过程记录见 [`04_文档报告/执行记录-2026-10-20.md`](04_文档报告/执行记录-2026-10-20.md)*
+
+## 关联仓库
+
+本仓库属于同一作者在电池与交通建模方向的系列工作：
+
+| 仓库 | 内容 |
+|---|---|
+| [battery-cathode-ml](https://github.com/ilo-love7/battery-cathode-ml) | 正极材料筛选：带隙 / 形成能 / 电压 / 容量 + 不确定度 + 多目标决策 |
+| [battery-lifetime-guide](https://github.com/ilo-love7/battery-lifetime-guide) | 从零复现 Severson 2019 循环寿命预测（含翻车记录） |
+| [battery-soh-tsfm-benchmark](https://github.com/ilo-love7/battery-soh-tsfm-benchmark) | 零样本时序基础模型 vs 线性外推：三数据集 SOH 基准 |
+| [battery-ecm-rul](https://github.com/ilo-love7/battery-ecm-rul) | Thevenin ECM 参数辨识 + 早期寿命预测 + PyBaMM 仿真 |
+| [drift-diffusion-pn-junction](https://github.com/ilo-love7/drift-diffusion-pn-junction) | 自研 1D 漂移–扩散–泊松求解器 + 三层验证 |
+| [car-following](https://github.com/ilo-love7/car-following) | 跟驰建模工具包（7 模型 / 稳定性 / 标定 / 换道 / EV 能耗） |
+| [project-packer](https://github.com/ilo-love7/project-packer) | 把真实项目包装成可防守的面试经历（事实档案 + 追问树） |
