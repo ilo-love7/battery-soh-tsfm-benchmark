@@ -67,11 +67,13 @@ jobs:
       - name: 图与已提交版本一致（像素级）
         run: python scripts/check_figures.py --pixels
 
-      # 文本产物（.md / .csv / .json）跨平台是确定的，要求一个字节都不变
-      - name: 汇总产物未被改动
+      # 文本产物（.md / .csv / .json）跨平台是确定的，要求一个字节都不变。
+      # figures/ 排除在外：Linux 上重画的 PNG 字节必然不同（FreeType/zlib
+      # 编码栈差异），它的等价性由上一步按像素断言。
+      - name: 汇总产物未被改动（文本）
         run: |
-          if git diff --exit-code; then
-            echo "OK：汇总链改写的产物与已提交的一致"
+          if git diff --exit-code -- . ':(exclude)04_文档报告/figures/'; then
+            echo "OK：汇总链改写的文本产物与已提交的一致"
           else
             echo "::error::汇总链改写了已提交产物（见上方 diff）"
             git diff --stat
