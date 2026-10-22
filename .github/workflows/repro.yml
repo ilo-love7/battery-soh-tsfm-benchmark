@@ -1,0 +1,86 @@
+name: repro
+
+# 复现门禁（§9.7）。守的不是新结论，而是两条已经验证过的性质：
+#   1. 从干净克隆跑汇总链，14 张图的 MD5 与已提交的逐位一致；
+#   2. 汇总链改写的文本产物与已提交的内容一致（git diff 为空）。
+# 另外跑全部回归测试与文档一致性检查。
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: repro-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  report-chain:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      # PNG 的 tEXt 块里嵌了 "Matplotlib version3.11.2"，
+      # 所以 MD5 门禁要求 matplotlib 版本与产出已提交图的那次完全一致。
+      # 升级 matplotlib 会让这个门禁报警——那是真实信号（图可能变了），
+      # 确认无误后重跑 figures.py 并提交新图即可。
+      - name: 安装依赖（matplotlib 钉在产出已提交图的版本）
+        run: |
+          python -m pip install -q --upgrade pip
+          python -m pip install -q "matplotlib==3.11.2"
+          python -m pip install -q -r requirements-core.txt
+          python -c "import matplotlib,numpy,pandas,scipy,sklearn;print(
+            'matplotlib',matplotlib.__version__,'| numpy',numpy.__version__,
+            '| pandas',pandas.__version__,'| scipy',scipy.__version__,
+            '| sklearn',sklearn.__version__)"
+
+      - name: 记录图的校验和（跑链之前）
+        run: |
+          md5sum 04_文档报告/figures/*.png | sort > "$RUNNER_TEMP/fig_before.md5"
+          echo "图数量：$(wc -l < "$RUNNER_TEMP/fig_before.md5")"
+
+      - name: 语法检查 + 回归测试
+        run: |
+          python -m compileall -q 01_源代码
+          cd 01_源代码
+          for t in test_prob_metrics test_calibrated test_cache_fingerprint \
+                   test_online_proxy test_conformal_w; do
+            echo "== $t =="
+            python "tests/$t.py" || exit 1
+          done
+
+      - name: 文档一致性（相对链接 + 目录锚点）
+        run: python scripts/check_docs.py
+
+      # 汇总链 21 步。CI 上没有原始数据集，4 个需要数据的步骤会打印
+      # "[跳过]" 并以 0 退出（SOFT_MISSING_DATA=1，见 run_matrix.sh）；
+      # 其余步骤只读 03_实验结果，任何一步失败都会让整条链返回非零。
+      - name: 汇总链（21 步）
+        env:
+          PY_CORE: python
+        run: bash scripts/run_matrix.sh report
+
+      - name: 图逐位一致
+        run: |
+          md5sum 04_文档报告/figures/*.png | sort > "$RUNNER_TEMP/fig_after.md5"
+          if diff -u "$RUNNER_TEMP/fig_before.md5" "$RUNNER_TEMP/fig_after.md5"; then
+            echo "OK：图与已提交的逐位一致"
+          else
+            echo "::error::图的 MD5 变了——汇总产物与图不一致"
+            exit 1
+          fi
+
+      - name: 汇总产物未被改动
+        run: |
+          if git diff --exit-code; then
+            echo "OK：汇总链改写的产物与已提交的一致"
+          else
+            echo "::error::汇总链改写了已提交产物（见上方 diff）"
+            git diff --stat
+            exit 1
+          fi

@@ -95,12 +95,21 @@ _ENV_HINT = {
 }
 
 
-def check_dataset(dataset: str, cfg: Optional[dict] = None) -> None:
+def check_dataset(dataset: str, cfg: Optional[dict] = None,
+                  soft: Optional[bool] = None) -> None:
     """确认该数据集的必需路径存在；不存在就抛出带修复提示的错误。
 
     `cfg` 默认用模块级 `DATASETS`；`load_dataset()` 会把调用方传入的那份配置
     显式传进来，避免"检查的是 A、加载的是 B"。
+
+    `soft=True`（或环境变量 `SOFT_MISSING_DATA=1`）时，缺数据不再是错误：
+    打印 `[跳过]` 并以退出码 0 结束。供 `run_matrix.sh report` 使用——
+    汇总链有 4 个步骤需要原始数据，干净克隆 / CI 上应当跳过而不是失败。
+    ⚠️ 推理入口（`run_benchmark.py` / `fewshot_finetune.py` 等）不要设这个变量：
+    那里缺数据必须硬失败，否则会静默产出空结果。
     """
+    if soft is None:
+        soft = os.environ.get("SOFT_MISSING_DATA") == "1"
     table = DATASETS if cfg is None else cfg
     if dataset not in table:
         raise SystemExit(f"未知数据集 {dataset!r}，可选：{list(table)}")
@@ -108,11 +117,15 @@ def check_dataset(dataset: str, cfg: Optional[dict] = None) -> None:
         p = Path(table[dataset][key])
         if not p.exists():
             var = _ENV_HINT.get((dataset, key), key.upper())
-            raise SystemExit(
+            msg = (
                 f"找不到 {dataset} 的数据：{p}\n"
                 f"请把数据放到上述位置，或设置环境变量 {var} 指向真实路径。\n"
                 f"数据集获取方式见 02_数据集链接/{dataset.upper()}*.md"
             )
+            if soft:
+                print(f"[跳过] {msg}")
+                raise SystemExit(0)
+            raise SystemExit(msg)
 
 
 # ---- 输出 / 权重目录（必须放在 MODELS 之前：注册表里引用了 RESULTS_ROOT）----

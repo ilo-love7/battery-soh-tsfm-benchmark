@@ -13,7 +13,7 @@
 #   PY_MODELS  跑 Moirai/Lag-Llama 的解释器（默认自动探测 venv-moirai）
 # 两个变量分开是因为 uni2ts 硬依赖 numpy 1.26（无 cp313 wheel），
 # 与 torch 2.14 + chronos-forecasting 无法共存在同一个 3.13 环境里。
-set -u
+set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
 ROOT=$(pwd)
 
@@ -146,10 +146,24 @@ fi
 # 注意：各步独立执行，不串成 && 链——diag_curvature 需要原始数据，
 # 而 report/figures 只读 03_实验结果，缺数据时不该被前一步拖死。
 if has report; then
+  # 汇总链有 4 个步骤需要原始数据（calibrate_width / online_proxy /
+  # diag_context_range / ablate_naive_linear）。干净克隆与 CI 上没有原始数据，
+  # 这些步骤应当「跳过（exit 0）」而不是把整条链判失败——否则 report 段在
+  # 没有数据集的机器上永远失败，而它本来只读 03_实验结果。
+  # 推理段（mit/nasa/calce/extra）不设这个变量：那里缺数据必须硬失败。
+  export SOFT_MISSING_DATA=1
+  AN_OK=0
+  AN_FAIL=0
   an() {
     echo "" | tee -a "$LOG"
     echo ">>> $*" | tee -a "$LOG"
-    ( cd "$ROOT/01_源代码" && "$PY_CORE" "$@" ) 2>&1 | tee -a "$LOG"
+    # pipefail 已开，所以这里的退出码是被测步骤的，不是 tee 的
+    if ( cd "$ROOT/01_源代码" && "$PY_CORE" "$@" ) 2>&1 | tee -a "$LOG"; then
+      AN_OK=$((AN_OK + 1))
+    else
+      AN_FAIL=$((AN_FAIL + 1))
+      echo "!!! 步骤失败（退出码非零）：$*" | tee -a "$LOG"
+    fi
   }
   # 无第三方依赖的回归测试（锁死缓存指纹的四个坑 + 在线代理的特征口径），失败不影响后续汇总
   an tests/test_cache_fingerprint.py
@@ -186,8 +200,18 @@ if has report; then
      --runs "mit-zero-chronos-bolt,chronos,timesfm,naive_linear-ctx512;mit-zero-moirai;mit-zero-lag-llama;mit-zero-naive_last,naive_linear,exp_decay-refactor;mit-zero-arima"
   an figures.py --prefix nasa_ \
      --runs "nasa-zero-chronos-bolt,chronos,timesfm,naive_linear,naive_last,exp_decay;nasa-zero-moirai;nasa-zero-lag-llama"
+  # 文档一致性（相对链接 + 目录锚点）：断链/失效锚点是纯文档腐坏，
+  # 没有任何测试会抓到它，而它直接毁掉仓库的可读性
+  an "$ROOT/scripts/check_docs.py"
   an figures.py --prefix calce_ \
      --runs "calce-zero-chronos-bolt,chronos,timesfm,naive_linear,naive_last,exp_decay;calce-zero-moirai;calce-zero-lag-llama"
+
+  echo "" | tee -a "$LOG"
+  echo ">>> 汇总步骤：$AN_OK 成功 / $AN_FAIL 失败" | tee -a "$LOG"
+  if [ "$AN_FAIL" -gt 0 ]; then
+    echo "!!! 汇总链有 $AN_FAIL 个步骤失败，见上方 !!! 行" | tee -a "$LOG"
+    exit 1
+  fi
 fi
 
 echo "" | tee -a "$LOG"
