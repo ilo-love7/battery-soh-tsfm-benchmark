@@ -60,7 +60,7 @@ jobs:
       # 汇总链 21 步。CI 上没有原始数据集，4 个需要数据的步骤会打印
       # "[跳过]" 并以 0 退出（SOFT_MISSING_DATA=1，见 run_matrix.sh）；
       # 其余步骤只读 03_实验结果，任何一步失败都会让整条链返回非零。
-      - name: 汇总链（21 步）
+      - name: 汇总链（22 步）
         env:
           PY_CORE: python
         run: bash scripts/run_matrix.sh report
