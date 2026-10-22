@@ -539,15 +539,22 @@ bash scripts/run_matrix.sh extra    # few-shot 微调（ft1/ft4/ft8/ftall）+ �
                                      # + 跨库迁移 + ablate_naive_linear.py
 bash scripts/run_matrix.sh report   # 纯汇总：report / 显著性 / 机制 / 种子方差 / 消融
                                      # + EOL重设计 / 校准头对比 / 区间宽度干预
-                                     # + 在线代理 / 上下文自测 / 上下文范围 / plot_fewshot / figures × 三库
+                                     # + 在线代理 / 上下文自测 / 上下文范围
+                                     # + 文档一致性 / plot_fewshot / figures × 三库
 ```
 
 `extra` 依赖已跑完的 `mit` / `calce` / `nasa` 推理格；`report` 只读 `03_实验结果/`,
-是**从干净克隆复现图与汇总产物**的标准入口（已在三次干净克隆上验证逐位一致）。
-它也会跑三项无第三方依赖的回归测试：`tests/test_cache_fingerprint.py`（16 项，
+是**从干净克隆复现图与汇总产物**的标准入口（已在多次干净克隆上验证逐位一致）。
+它也会跑五项无第三方依赖的回归测试：`tests/test_cache_fingerprint.py`（16 项，
 锁死 CALCE 缓存指纹的四个坑）、`tests/test_online_proxy.py`（36 项，
 锁死在线代理的特征口径——尤其是 `slope_*` 的 horizon 归一化）与
 `tests/test_conformal_w.py`（20 项，锁死伪任务的切分与 `T_MIN` 兜底）。
+
+`report` 段有 4 个步骤需要原始数据（`calibrate_width` / `online_proxy` /
+`diag_context_range` / `ablate_naive_linear`）。没有数据集时会打印
+`[跳过]` 并以退出码 0 结束，**不会**用空结果覆盖已提交产物；
+推理段不设这个开关，那里缺数据仍然硬失败。
+收尾会打印「N 成功 / M 失败」，有任何一步失败整条链返回非零。
 
 输出在 `03_实验结果/<dataset>-<setting>-<models>/`：`per_cell_*.csv`、`summary.json`
 （含协议参数、包版本、权重路径、耗时、随机种子）、`predictions_*.npz`。
@@ -560,7 +567,7 @@ bash scripts/run_matrix.sh report   # 纯汇总：report / 显著性 / 机制 / 
 01_源代码/
 ├── configs/config.py        路径解析 + 协议参数 + 模型注册表 + HF 镜像（唯一真源）
 ├── data/loaders.py          MIT / NASA / CALCE 真实加载器（CALCE 带来源指纹的 parquet 缓存）
-├── tests/                    无第三方依赖的回归测试（缓存指纹 / 在线代理 / 伪任务切分，共 72 项）
+├── tests/                    无第三方依赖的回归测试（缓存指纹 / 在线代理 / 伪任务切分，共 214 项）
 ├── data/protocol.py         清洗 / SOH 归一 / 相对起点切分 / 平滑参考
 ├── adapters/base.py         Forecaster 接口 + 批量滚动递归 + 分位数接口 + 分位数穿越修复
 ├── adapters/                chronos / timesfm / lagllama / moirai（各自独立种子推进）
@@ -599,6 +606,8 @@ bash scripts/run_matrix.sh report   # 纯汇总：report / 显著性 / 机制 / 
   └── conformal_w/           上下文内自测（horizon 不变性 + 逐 cell w_hat / w_oracle / 三种 PICP）
 04_文档报告/                  短文初稿、方案、执行记录、结果表、figures、_history（历史材料）
 scripts/                      setup_env.{sh,bat} + run_matrix.sh + run_prob.sh + run_cal.sh
+                             + check_docs.py（文档链接与锚点检查，report 链会跑）
+.github/workflows/repro.yml    CI：干净克隆上跑测试 + 汇总链，断言图与产物未被改动
 requirements-core.txt         核心依赖（基线所需）
 requirements-models.txt       模型依赖（已实测可共存的版本组合 + 踩坑记录）
 ```
@@ -607,27 +616,35 @@ requirements-models.txt       模型依赖（已实测可共存的版本组合 +
 
 ## 复现性：我们踩过并修掉的坑
 
-> **已验证（三次，均在干净克隆上）**：把仓库 `git clone` 到干净目录，不带 `data/`、
-> 不带 `local_paths.py`，只跑 `bash scripts/run_matrix.sh report`（21 步：
-> 三项回归测试 + `report.py` / `stats_significance.py` /
+> **已验证（多次，均在干净克隆上）**：把仓库 `git clone` 到干净目录，不带 `data/`、
+> 不带 `local_paths.py`，只跑 `bash scripts/run_matrix.sh report`（22 步：
+> 五项回归测试 + `report.py` / `stats_significance.py` /
 > `analyze_shrinkage.py` / `analyze_seeds.py` / `analyze_eol2.py` /
 > `analyze_calibration.py` / `calibrate_width.py` / `online_proxy.py` /
 > `conformal_w.py --skip-inference` / `diag_context_range.py` /
 > `diag_curvature.py` × 3 / `ablate_naive_linear.py` /
-> `plot_fewshot.py` / `figures.py` × 三库），
+> `check_docs.py` / `plot_fewshot.py` / `figures.py` × 三库），
 > **14 张图 MD5 与原图逐位一致**，
-> 7 个汇总产物内容一致（`.md` 仅剩 `core.autocrlf` 造成的行尾差异，`git diff` 为空），
-> 缓存指纹回归测试 16/16 通过。
+> 5 个汇总产物内容一致（`.md` 仅剩 `core.autocrlf` 造成的行尾差异，`git diff` 为空），
+> 回归测试 214 项全过。
 > 也就是说提交的结果文件与图完全对应，中间没有手工改数，且这一致性是跨机器成立的。
 >
-> 后加入的六步（`analyze_eol2` / `analyze_calibration` / `calibrate_width` /
-> `online_proxy` / `conformal_w --skip-inference` / `diag_context_range`）不产图，
+> **这条性质现在由 CI 守**（`.github/workflows/repro.yml`）：每次 push 到 `main`
+> 都在干净克隆上重跑测试 + 汇总链，然后断言 14 张图 MD5 未变、`git diff` 为空。
+> 注意 PNG 的 tEXt 块里嵌了 `Matplotlib version`，所以 CI 把 matplotlib 钉在
+> 3.11.2（产出已提交图的那个版本）；升级它会让门禁报警，那是真实信号。
+>
+> 后加入的七步（`analyze_eol2` / `analyze_calibration` / `calibrate_width` /
+> `online_proxy` / `conformal_w --skip-inference` / `diag_context_range` /
+> `check_docs`）不产图，
 > 只读已提交的 `03_实验结果/prob`、`calib` 与 `predictions_*.npz`，
 > 所以上面的图一致性与它们独立：
 > `calibrate_width.py` 连跑两轮 + 干净克隆重跑一次，17 个产物 CSV 的 MD5 逐位相同
 > （克隆里需自带 CALCE 解析缓存 `01_源代码/data/processed/calce_capacity_v3.parquet`，
 > 否则会先花 10–20 分钟重解析 27 个 zip）；`online_proxy.py`、`diag_context_range.py`
 > 与 `conformal_w.py --skip-inference` 各连跑两轮，产物 MD5 逐位相同。
+> 上面 4 个需要原始数据的步骤在没有数据集的机器上会打印 `[跳过]` 并退出 0，
+> 不会用空结果覆盖已提交产物。
 
 这部分是本项目最有价值的部分之一——**每一个坑都会让数字悄悄错掉，而且不报错**：
 
@@ -651,6 +668,8 @@ requirements-models.txt       模型依赖（已实测可共存的版本组合 +
 | 16 | 分位数**穿越**用 `np.sort` 修 | 排序会换掉模型的 q50，分位数递归与点预测的中位数差 0.012 SOH%，`predictions_*.npz` 不再逐位一致 | 以模型中位数为锚做保序修复（下侧 `min(cummax, q50)`、上侧 `max(cummax, q50)`），修复后中位数偏差 0.000e+00 |
 | 17 | TimesFM 分位数层**错位一格** | 2.5 的分位数张量是 `len(quantiles)+1 = 10` 列：第 0 列是空槽（不参与保序修复、不被连续头覆写、翻转等变时也不翻转），9 个分位数在第 1..9 列，第 5 列兼作点预测（官方 `return full_forecast[..., 5], full_forecast`）。写成 `linspace(0.1, 0.9, 10)` 后请求 0.5 落在「真 q0.4 与真 q0.5 之间」⇒ 中位数被换掉、区间被夹窄。**分位数链路跑出另一条轨迹，CALCE 最大分叉 10.93 SOH%**，PICP 低到 3.7%（真值 10.9%）、NASA 10.2%（真值 76.2%），而错的数字**静默写进了 `per_cell_*.csv`** | 新增 `_quantile_layout()`：从模型读 `config.quantiles` + `aridx`，按 `列数 == 层数+1` 判"有空槽"布局、跳过第 0 列、校验中位数列必须与 `aridx` 对齐，对不上就报错不猜；请求层与模型层重合时直接取原列 ⇒ q50 与点预测逐位相同。另加流水线闸门 `metrics.median_deviation()`（超 1e-9 告警并写进 `summary.json`） |
 | 18 | 采样型模型**两条链路各采一次样** + **分位数取法与点预测不同** | 两个独立缺陷叠加：(a) 种子由全局单调计数器推进，点预测链路用掉 1..N、分位数链路接着用 N+1..2N ⇒ 同一个 chunk 采到**不同样本**；(b) 即使样本相同，`np.quantile(samples, 0.5)`（线性插值）也**不等于** gluonts `fc.quantile(0.5)`（`round((S−1)q)` 取最近样本、不插值），同一批样本差半个样本间距 0.0157 SOH%。合起来 moirai 首 chunk 差 0.062、lag-llama 差 4.38，全段放大到 32–78 SOH% | (a) 基类加 `rng_checkpoint()` / `rng_restore()`，`run_model` 在每组点预测链路前取 checkpoint、分位数链路前恢复 ⇒ 两遍同种子；因为两条批量递归的调用序列 1:1 对应，恢复后计数器恰好回到原值，**点预测链路与主表逐位不变**（`predictions_*.npz` 一个字节都没动）。(b) 抽 `adapters.base.quantiles_from_forecast(fc, levels, horizon)`，内部只用 `fc.quantile()` 这同一个访问器 |
+| 19 | **汇总链吞掉所有失败**：`run_matrix.sh report` 的 `an()` 不记录退出码 | 21 步里任何一步崩了（包括缺数据、语法错、import 失败），整条链照样 `exit 0`。2026-10-22 干净克隆演练时 4 个步骤缺数据各返回 1，而链报成功——**从退出码上完全看不出来** | `set -o pipefail` + 逐步记录成败，收尾打印「N 成功 / M 失败」并有失败时 `exit 1`；另加 `SOFT_MISSING_DATA=1` 让缺数据变成显式的「跳过（exit 0）」。已验证：注入一个必失败步骤后链返回 1 且其余步骤照常跑完 |
+| 20 | **文档腐坏没有任何测试会抓** | README 的目录锚点曾全部失效（章节标题改过、锚点没跟着改），断链同样只靠人眼发现 | 新增 `scripts/check_docs.py`：检查 README 与 `04_文档报告/*.md` 的相对链接与锚点，`report` 链与 CI 都会跑；已反向验证能抓到人为插入的断链与失效锚点 |
 
 细节见 [`04_文档报告/执行记录-2026-10-20.md`](04_文档报告/执行记录-2026-10-20.md)。
 
