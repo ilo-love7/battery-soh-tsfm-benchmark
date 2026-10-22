@@ -1,136 +1,280 @@
-# 零样本时序基础模型，真的比线性外推更强吗？
+<div align="center">
 
-### 一个在三个公开锂电池老化数据集上的可复现基准
+# Do Zero-Shot Time-Series Foundation Models Really Beat Linear Extrapolation?
 
+### A reproducible three-dataset benchmark for battery state-of-health prediction
+
+[![repro](https://github.com/ilo-love7/battery-soh-tsfm-benchmark/actions/workflows/repro.yml/badge.svg)](https://github.com/ilo-love7/battery-soh-tsfm-benchmark/actions/workflows/repro.yml)
+[![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 ![python](https://img.shields.io/badge/python-3.12%20%7C%203.13-blue)
 ![platform](https://img.shields.io/badge/platform-CPU-lightgrey)
-![license](https://img.shields.io/badge/license-MIT-green)
 ![models](https://img.shields.io/badge/foundation%20models-5-orange)
 ![cells](https://img.shields.io/badge/evaluated%20cells-61-red)
-[![repro](https://github.com/ilo-love7/battery-soh-tsfm-benchmark/actions/workflows/repro.yml/badge.svg)](https://github.com/ilo-love7/battery-soh-tsfm-benchmark/actions/workflows/repro.yml)
 
-把 Chronos、TimesFM、Moirai、Lag-Llama 当作**不认识电池的陌生人**：只看一段容量衰减历史、
-**零训练、零微调**，去预测剩余寿命与未来 SOH，并与 naive_last / naive_linear / exp_decay / ARIMA
-四个经典基线在**完全相同的协议**下对比。
+<p align="center">
+  <b>English</b> · <a href="./README.zh-CN.md">简体中文</a>
+</p>
 
-结论一句话：**零样本基础模型不是普遍更强，它是否更强取决于数据有没有"膝点"。**
-
----
-
-## 目录
-
-- [主要结论](#主要结论)
-- [基准设计](#基准设计)
-- [结果](#结果)
-- [概率口径：覆盖率几乎只由「区间宽度 / 误差量级」决定](#概率口径覆盖率几乎只由区间宽度--误差量级决定)
-- [机制：不是"更懂电池"，而是"敢不敢外推"](#机制不是更懂电池而是敢不敢外推)
-- [2 个参数的校准头](#2-个参数的校准头)
-- [在线代理：拐点能从上下文估出来，模型选择不能](#在线代理拐点能从上下文估出来模型选择不能)
-- [快速开始](#快速开始)
-- [目录结构](#目录结构)
-- [复现性](#复现性)
-- [局限](#局限)
-- [引用与许可](#引用与许可)
+</div>
 
 ---
 
-## 主要结论
+**A reproducible benchmark for battery SOH forecasting** that treats Chronos, TimesFM, Moirai and Lag-Llama as *strangers who know nothing about batteries*: given only a capacity-fade history, with **zero training and zero fine-tuning**, predict future SOH and remaining life — and compare them against `naive_last` / `naive_linear` / `exp_decay` / ARIMA under one identical protocol, across MIT-Stanford, NASA PCoE and CALCE UMD.
 
-| # | 结论 | 关键数字 |
+> **Short answer: zero-shot foundation models are not universally better. Whether they win depends on whether the data has a knee.**
+
+Three things worth knowing before you scroll:
+
+- **The ranking flips across datasets.** The same Chronos-T5 is 26% *better* than linear extrapolation on MIT and 139% *worse* on CALCE. The model did not change; the data did.
+- **What predicts the winner is `knee_ratio`** — how much the fade accelerates after the context window — not parameter count.
+- **Two scalars beat 60M weights.** A 2-parameter calibration head matches full fine-tuning on a single cell, with no backpropagation at all.
+
+---
+
+## Contents
+
+- [Key findings](#key-findings)
+- [Quick start](#quick-start)
+- [Benchmark design](#benchmark-design)
+- [Results](#results)
+- [Probabilistic metrics: coverage is set almost entirely by interval width](#probabilistic-metrics-coverage-is-set-almost-entirely-by-interval-width)
+- [Mechanism: not "understands batteries", but "dares to extrapolate"](#mechanism-not-understands-batteries-but-dares-to-extrapolate)
+- [The 2-parameter calibration head](#the-2-parameter-calibration-head)
+- [Online proxies: the knee is estimable, model selection is not](#online-proxies-the-knee-is-estimable-model-selection-is-not)
+- [Repository layout](#repository-layout)
+- [Reproducibility](#reproducibility)
+- [Limitations](#limitations)
+- [Citation and license](#citation-and-license)
+
+---
+
+## Key findings
+
+| # | Finding | Key numbers |
 |---|---|---|
-| 1 | 零样本基础模型**不是普遍更强**：5 个模型里只有 Chronos-T5 在两个库上稳定领先 | MIT 3.02 vs 线性 4.07（−26%）；NASA 1.52 vs 3.65 |
-| 2 | Chronos-Bolt 与线性外推**几乎等价**，差距统计显著但**没有实际意义** | Δ = +0.13 SOH%，p = 0.002 |
-| 3 | 优势取决于**数据有没有膝点**，与模型本身无关 | MIT `knee_ratio` 8.88 → 基础模型赢；CALCE 1.65 → 线性外推赢（1.76–2.39×） |
-| 4 | 这个排序**不是起点选择的假象**：40/50/60% 三个起点上 CALCE 结论都不变 | 线性 6.45 / 4.62 / 6.00，均为最优 |
-| 5 | **few-shot 微调能翻转结论**：19 支电池把 Bolt 从 4.11 拉到 2.66 | −35%，反超所有零样本模型；1 支电池即 −21% |
-| 6 | 微调只迁移"**敢外推**"，不迁移"**该多陡**" | CALCE EOL 命中 0% → 88%，但起点已偏低的电池被外推到接近 0（单支 MAE 109.8） |
-| 7 | EOL 指标只在 NASA / CALCE 可用，且样本量小到**不足以支撑显著性结论**；NASA 只作方向性证据（排名随起点变化、种子 CV 30.6%，naive_linear 换整段拟合能从 6.11 降到 2.48） | NASA n=4（闸门后 3）、CALCE n=14（闸门后 8） |
-| 8 | 结论对起点与种子稳健：三个起点、三个额外种子下排名均无翻转（NASA 除外） | MIT/CALCE 种子 CV ≤ 8.7%；NASA 30.6% |
-| 9 | **区间宽度普遍只有误差量级的 4%–15%**，覆盖率因此塌到 9–22%；反过来，`MPIW/MAE ≥ 1.5` 的 6 组覆盖率都在 76–94%，中间**没有过渡样本** | `MPIW/MAE < 1.0` 的 9 组 PICP 全在 8.8–22.2%；`≥ 1.5` 的 6 组全在 76.1–94.4%（ρ=0.83） |
-| 10 | 早期版本的 EOL 命中率**会把失败记成满分**：lag-llama 在 MIT 上 100% 命中，其实比真值早 197 个循环就跌破 80% | 过冲 −197 循环、RUL 相对误差 0.71；改用三量后可排序 |
-| 11 | **2 个标量的校准头 ≈ 1 支电池上的全量微调**，且 EOL 命中率反超所有微调档位 | MIT 4.110 → 3.256（−20.8%，微调 1 支为 3.241）；EOL 0% → 47% vs 微调 5–37% |
-| 12 | 上一条的横截面规律**是相关、不是因果**：只缩放区间半宽，MIT 的 chronos-bolt 拉宽 15 倍覆盖率只到 43%，要 80% 得 113 倍（CRPS +115%）。**「太宽」倒是单标量能修好** | 9/15 组需 38–2000 倍宽度、CRPS 中位涨 465%；lag-llama@MIT 收窄 0.62× 即 80%、CRPS −25% |
-| 13 | **换模型的粒度是库、不是 cell**：拐点能只从上下文估出来，但「逐 cell 选模型」的收益天花板只有 1.7% / 0% / 20%，留一库路由 6/6 都没跑赢「两者取优」 | MIT 天花板 2.98 vs 最优单模型 3.03；CALCE 6.04 → 4.82，但留一库只能到 7.96 |
-| 14 | **在线估 `w` 三条路全关**：上下文特征回归 19pp 最好但只到量级；conformal 上下文自测可部署口径 38pp 更差；乘事后修正因子后 14.9pp，仍**输给不用自测的库常数 11.4pp**（净收益 −3.5pp） | 118 个 cell：65pp（不校准）→ 38pp（自测）→ 14.9pp（+`k`）vs 11.4pp（常数基线） |
+| 1 | Zero-shot foundation models are **not universally better**: only Chronos-T5 leads consistently, and only on two of the three datasets | MIT 3.02 vs linear 4.07 (−26%); NASA 1.52 vs 3.65 |
+| 2 | Chronos-Bolt and linear extrapolation are **practically equivalent** — the gap is statistically significant but **meaningless** | Δ = +0.13 SOH%, p = 0.002 |
+| 3 | The advantage depends on **whether the data has a knee**, not on the model | MIT `knee_ratio` 8.88 → foundation model wins; CALCE 1.65 → linear wins (1.76–2.39×) |
+| 4 | This ordering is **not an artifact of the start point**: the CALCE conclusion holds at 40/50/60% starts | linear 6.45 / 4.62 / 6.00, best in all three |
+| 5 | **Few-shot fine-tuning flips the conclusion**: 19 cells take Bolt from 4.11 to 2.66 | −35%, beating every zero-shot model; a single cell already gives −21% |
+| 6 | Fine-tuning transfers "**dare to extrapolate**", not "**how steep to go**" | CALCE EOL hit 0% → 88%, but cells starting below 80% get extrapolated toward 0 (single-cell MAE 109.8) |
+| 7 | EOL is only available on NASA / CALCE, and the sample size is **too small to support significance claims**; NASA is directional evidence only (ranking shifts with start point, seed CV 30.6%; full-segment refit takes `naive_linear` from 6.11 to 2.48) | NASA n=4 (3 after gating), CALCE n=14 (8 after gating) |
+| 8 | Conclusions are robust to start point and seed: no ranking flips across three starts and three extra seeds (except NASA) | MIT/CALCE seed CV ≤ 8.7%; NASA 30.6% |
+| 9 | **Interval width is typically only 4%–15% of the error magnitude**, so coverage collapses to 9–22%; conversely, all 6 groups with `MPIW/MAE ≥ 1.5` land at 76–94% coverage — with **no samples in between** | 9 groups at `MPIW/MAE < 1.0` → PICP 8.8–22.2%; 6 groups at `≥ 1.5` → 76.1–94.4% (ρ=0.83) |
+| 10 | The earlier EOL hit-rate metric **scored failures as perfect**: lag-llama hit 100% on MIT while actually crossing 80% **197 cycles early** | overshoot −197 cycles, RUL relative error 0.71; three replacement metrics make it orderable |
+| 11 | **A 2-scalar calibration head ≈ full fine-tuning on one cell**, and its EOL hit rate beats every fine-tuning setting | MIT 4.110 → 3.256 (−20.8%, vs 3.241 for 1-cell fine-tuning); EOL 0% → 47% vs 5–37% |
+| 12 | The cross-sectional pattern above is **correlation, not causation**: scaling interval half-width only, MIT's chronos-bolt reaches 43% coverage at 15× and needs 113× for 80% (CRPS +115%). **"Too wide" *is* fixable with one scalar** | 9/15 groups need 38–2000× width, median CRPS +465%; lag-llama@MIT narrows 0.62× to hit 80%, CRPS −25% |
+| 13 | **Model choice is a per-dataset phenomenon, not a per-cell one**: the knee is estimable from context alone, but per-cell routing caps out at 1.7% / 0% / 20% gain, and leave-one-dataset-out routing loses 6/6 to "take the better of two" | MIT ceiling 2.98 vs best single model 3.03; CALCE 6.04 → 4.82, but LOOCV only reaches 7.96 |
+| 14 | **All three routes to online `w` estimation are closed**: context-feature regression reaches 19pp at best; conformal self-testing is worse at 38pp deployable; after a post-hoc correction factor 14.9pp, still **worse than the no-self-test dataset constant at 11.4pp** (net −3.5pp) | 118 cells: 65pp (uncalibrated) → 38pp (self-test) → 14.9pp (+`k`) vs 11.4pp (constant baseline) |
 
-> 全部数字见 [`04_文档报告/结果表.md`](04_文档报告/结果表.md)、
-> 区间与 p 值见 [`03_实验结果/显著性检验.md`](03_实验结果/显著性检验.md)、
-> 概率口径与 EOL 重设计见 [`04_文档报告/EOL重设计.md`](04_文档报告/EOL重设计.md)、
-> 校准头三方对比见 [`04_文档报告/校准头对比.md`](04_文档报告/校准头对比.md)、
-> 宽度干预与在线代理见 [`04_文档报告/区间宽度校准.md`](04_文档报告/区间宽度校准.md)
-> 与 [`04_文档报告/在线代理.md`](04_文档报告/在线代理.md)；
-> 上下文内自测见 [`04_文档报告/上下文自测.md`](04_文档报告/上下文自测.md)。
-> 所有走不通的路集中记在 [`04_文档报告/失败记录.md`](04_文档报告/失败记录.md)
-> （含「必须改什么前提才能继续」的前提表）。
+> All numbers: [`04_文档报告/结果表.md`](04_文档报告/结果表.md).
+> Intervals and p-values: [`03_实验结果/显著性检验.md`](03_实验结果/显著性检验.md).
+> Probabilistic metrics and the EOL redesign: [`04_文档报告/EOL重设计.md`](04_文档报告/EOL重设计.md).
+> Three-way calibration comparison: [`04_文档报告/校准头对比.md`](04_文档报告/校准头对比.md).
+> Width intervention and online proxies: [`04_文档报告/区间宽度校准.md`](04_文档报告/区间宽度校准.md)
+> and [`04_文档报告/在线代理.md`](04_文档报告/在线代理.md);
+> in-context self-testing: [`04_文档报告/上下文自测.md`](04_文档报告/上下文自测.md).
+> Every dead end is collected in [`04_文档报告/失败记录.md`](04_文档报告/失败记录.md)
+> (including a table of "what premise must change before this can continue").
+>
+> *Document and directory names in this repository are in Chinese; links point at the real paths.*
 
 ---
 
-## 基准设计
+## Quick start
 
-### 数据（三个库，61 个 cell）
+### 0. Environment
 
-| 数据集 | 体系 | cells | SOH 观测区间 | `knee_ratio` | 用途 |
+```bash
+git clone https://github.com/ilo-love7/battery-soh-tsfm-benchmark && cd battery-soh-tsfm-benchmark
+
+# Core deps only (baselines + data loading, no model libraries)
+bash scripts/setup_env.sh          # macOS / Linux / Git-Bash
+# or: scripts\setup_env.bat         # Windows CMD
+```
+
+Foundation-model dependencies live in [`requirements-models.txt`](requirements-models.txt). **Two environments are intentional:**
+
+- `venv` (Python 3.13): Chronos / TimesFM / all baselines / few-shot fine-tuning;
+- `venv-moirai` (Python **3.12**): Moirai / Lag-Llama — `uni2ts` hard-pins `numpy~=1.26`, which has no cp313 wheel and cannot coexist with `torch 2.14 + chronos-forecasting` in one 3.13 environment.
+
+CPU is enough; no GPU required. Every number in this README was produced on CPU (Windows 11 / torch 2.14.1).
+
+### 1. Data
+
+The code only **references** data paths — it never copies or rewrites raw files. Lay the data out like this for zero-config:
+
+```
+data/
+├── MIT/          mit_cells.parquet, mit_cycles.parquet, MATR.zip
+├── NASA_PCoE/    1. BatteryAgingARC-FY08Q4/*.mat
+└── CALCE_UMD/    CS2_*.zip / CX2_*.zip
+```
+
+Or skip moving anything and point environment variables at the real location:
+
+```bash
+export BATTERY_DATA_ROOT=/path/to/datasets   # root
+export MIT_CELLS=/path/mit_cells.parquet     # or override individually
+export NASA_MAT_DIR=/path/1.\ BatteryAgingARC-FY08Q4
+export CALCE_DIR=/path/CALCE_UMD
+```
+
+Alternatively copy [`01_源代码/configs/local_paths.example.py`](01_源代码/configs/local_paths.example.py) to `configs/local_paths.py` and hard-code paths there (that file is git-ignored). Dataset provenance, fields and download instructions are in [`02_数据集链接/`](02_数据集链接/).
+
+### 2. Weights
+
+```bash
+export HF_ENDPOINT=https://hf-mirror.com      # mainland China; omit elsewhere
+export HF_HUB_DISABLE_XET=1                   # mirrors do not support xet; omitting this breaks the download
+
+hf download amazon/chronos-bolt-small       --local-dir shared/models/chronos-bolt-small
+hf download amazon/chronos-t5-small         --local-dir shared/models/chronos-t5-small
+hf download google/timesfm-2.5-200m-pytorch --local-dir shared/models/timesfm-2.5-200m-pytorch
+hf download Salesforce/moirai-1.0-R-small   --local-dir shared/models/moirai-1.0-R-small
+# Lag-Llama: shared/models/lag-llama/lag-llama.ckpt (source in requirements-models.txt)
+```
+
+`resolve_model_ref()` prefers the local directory automatically — **nothing touches the network at run time**.
+
+### 3. Run
+
+Fastest path: rebuild every table and figure from the committed artifacts (no inference, no data needed).
+
+```bash
+bash scripts/run_matrix.sh report
+```
+
+Then to reproduce inference yourself:
+
+```bash
+cd 01_源代码
+
+# One cell: all classical baselines on the MIT test split
+../venv/Scripts/python.exe run_benchmark.py --model all-baselines --dataset mit --split test
+
+# One foundation model
+../venv/Scripts/python.exe run_benchmark.py --model chronos-bolt --dataset mit --split test
+
+# Cross-dataset
+../venv/Scripts/python.exe run_benchmark.py --models chronos-bolt,naive_linear --dataset calce
+```
+
+Full matrix (raw data behind tables 1–5 and figures 1–6, ~10 h on CPU):
+
+```bash
+bash scripts/run_matrix.sh all     # inference: mit / nasa / calce / sens / seed
+bash scripts/run_matrix.sh extra   # few-shot fine-tuning + cross-dataset transfer + ablation
+bash scripts/run_matrix.sh report  # summary chain only, no inference
+```
+
+`extra` depends on completed `mit` / `calce` / `nasa` cells; `report` reads only `03_实验结果/` and is **the standard entry point for reproducing figures and summary artifacts from a clean clone** (verified bit-identical across several clean clones). It also runs five dependency-free regression suites (214 items in total), including `tests/test_cache_fingerprint.py` (16 items, locking down the four CALCE cache-fingerprint pitfalls), `tests/test_online_proxy.py` (36 items, locking down the online-proxy feature definitions — especially horizon normalisation of `slope_*`) and `tests/test_conformal_w.py` (20 items, locking down the pseudo-task split and the `T_MIN` fallback).
+
+Four `report` steps need raw data (`calibrate_width` / `online_proxy` / `diag_context_range` / `ablate_naive_linear`). Without datasets they print `[skipped]` and exit 0, **never** overwriting committed artifacts with empty results. The inference stage has no such switch — missing data there is a hard failure. The chain prints `N succeeded / M failed` at the end and returns non-zero if any step failed.
+
+Outputs land in `03_实验结果/<dataset>-<setting>-<models>/`: `per_cell_*.csv`, `summary.json` (protocol params, package versions, weight paths, runtime, seed), `predictions_*.npz`.
+
+<details>
+<summary>All individual analysis commands</summary>
+
+```bash
+# Summary tables / significance / mechanism / seed variance
+python report.py
+python stats_significance.py
+python analyze_shrinkage.py
+python analyze_seeds.py
+
+# naive_linear fitting-window ablation (⌊n/2⌋ vs full segment, reconciled against published numbers)
+python ablate_naive_linear.py
+
+# few-shot curves (x-axis uses the ACTUAL support-set size 1/4/7/19)
+python plot_fewshot.py
+
+# Probabilistic metrics (CRPS / PICP / MPIW + EOL redesign), output under prob/
+bash ../scripts/run_prob.sh all
+python analyze_eol2.py
+
+# 2-parameter calibration head: fit → evaluate on three datasets → three-way comparison
+python calibrate_head.py --dataset mit --split train
+bash ../scripts/run_cal.sh all
+python analyze_calibration.py
+
+# Figures (--runs is semicolon-separated: result directory names contain commas)
+python figures.py --prefix mit_ \
+  --runs "mit-zero-chronos-bolt,chronos,timesfm,naive_linear-ctx512;mit-zero-moirai;mit-zero-lag-llama;mit-zero-naive_last,naive_linear,exp_decay-refactor;mit-zero-arima"
+python figures.py --prefix nasa_ \
+  --runs "nasa-zero-chronos-bolt,chronos,timesfm,naive_linear,naive_last,exp_decay;nasa-zero-moirai;nasa-zero-lag-llama"
+python figures.py --prefix calce_ \
+  --runs "calce-zero-chronos-bolt,chronos,timesfm,naive_linear,naive_last,exp_decay;calce-zero-moirai;calce-zero-lag-llama"
+```
+
+</details>
+
+---
+
+## Benchmark design
+
+### Data (three datasets, 61 cells)
+
+| Dataset | Chemistry | Cells | SOH range observed | `knee_ratio` | Role |
 |---|---|---|---|---|---|
-| [MIT-Stanford](02_数据集链接/MIT_MATR-1.md) | LFP / 18650 | 124（41/43/40 官方三划分） | 98.3 → 79.2 | **8.88** | 主战场：强膝点，且**在 EOL 处截断** |
-| [NASA PCoE](02_数据集链接/NASA_PCoE.md) | LCO / 18650 | 4 | 83.3 → 72.4 | 0.65 | 小样本、衰减减速 |
-| [CALCE UMD](02_数据集链接/CALCE_UMD.md) | LCO / 棱柱 | 14（27 个 zip 按电压窗口筛出全深度老化） | 84.4 → 42.8 | 1.65 | 反向检验：近线性衰减、区间最宽 |
+| [MIT-Stanford](02_数据集链接/MIT_MATR-1.md) | LFP / 18650 | 124 (official 41/43/40 split) | 98.3 → 79.2 | **8.88** | Main arena: strong knee, and **truncated at EOL** |
+| [NASA PCoE](02_数据集链接/NASA_PCoE.md) | LCO / 18650 | 4 | 83.3 → 72.4 | 0.65 | Small sample, decelerating fade |
+| [CALCE UMD](02_数据集链接/CALCE_UMD.md) | LCO / prismatic | 14 (27 zips filtered by voltage window) | 84.4 → 42.8 | 1.65 | Counter-test: near-linear fade, widest range |
 
-三个库的 `knee_ratio`（未来斜率 / 上下文斜率）相差一个量级，这是本基准最重要的**数据属性**，
-也是后面所有"结论反转"的根源。
+The three datasets' `knee_ratio` (future slope / context slope) differ by an order of magnitude. This is the benchmark's most important **data property**, and the root of every "conclusion flip" below.
 
-### 模型
+### Models
 
-| 类型 | 模型 | 参数 | 上下文上限 | 解码 |
+| Type | Model | Params | Context cap | Decoding |
 |---|---|---|---|---|
-| 基础模型 | Chronos-Bolt-small | 48 M | 2048 | 分位数（确定性） |
-| 基础模型 | Chronos-T5-small | 46 M | 512 | 20 样本取中位 |
-| 基础模型 | TimesFM 2.5-200M | 200 M | 权重原生 16384，适配器按 **512** 配置 | 点预测 |
-| 基础模型 | Moirai-1.0-R-small | 14 M | 512 | 100 样本取中位 |
-| 基础模型 | Lag-Llama | **2.4 M** | **32**（原生） | 10 样本取中位 |
-| 基线 | naive_last / naive_linear / exp_decay | — | — | 确定性 |
-| 基线 | ARIMA | — | — | 确定性 |
+| Foundation | Chronos-Bolt-small | 48 M | 2048 | quantile (deterministic) |
+| Foundation | Chronos-T5-small | 46 M | 512 | median of 20 samples |
+| Foundation | TimesFM 2.5-200M | 200 M | weights native 16384, adapter configured at **512** | point forecast |
+| Foundation | Moirai-1.0-R-small | 14 M | 512 | median of 100 samples |
+| Foundation | Lag-Llama | **2.4 M** | **32** (native) | median of 10 samples |
+| Baseline | naive_last / naive_linear / exp_decay | — | — | deterministic |
+| Baseline | ARIMA | — | — | deterministic |
 
-> **关于 `naive_linear`**：它只对上下文**最近 ⌊n/2⌋ 个点**做最小二乘（电池序列开头常有容量平台，
-> 纳入拟合会把斜率压平）。作者另跑了"整段拟合"变体：MIT 4.066 → 4.528、CALCE 4.623 → 6.275（本文版本更强），
-> **但 NASA 6.111 → 2.478（整段更强）**。因此 NASA 只作方向性证据；该消融与讨论见短文初稿 §3.2 脚注。
+> **On `naive_linear`**: it fits least squares only on the **most recent ⌊n/2⌋ points** of the context (battery series often start with a capacity plateau, and including it flattens the slope). A "full-segment fit" variant was also run: MIT 4.066 → 4.528, CALCE 4.623 → 6.275 (this version is stronger), **but NASA 6.111 → 2.478** (full segment is stronger). NASA is therefore treated as directional evidence only; see footnote §3.2 of the short paper.
 
-### 协议（写死，所有模型同口径）
+### Protocol (fixed, identical for every model)
 
-- **切分**：相对起点 50%（敏感性 40/50/60%），用前半段猜后半段；
-- **归一**：`SOH = 容量 / median(上下文前 5 点) × 100`，**因果、无泄漏**；
-- **推理**：递归滚动，单次 horizon = 64（Chronos 上限 64，硬预测本就不可能），所有模型一致；
-- **上下文**：默认各用自身上限（Bolt 2048 / T5 512 / TimesFM 512 / Moirai 512 / Lag-Llama 32）；另跑 `--max-context 512` 做**公平对照**（主表用 512）。
-  注意 TimesFM 2.5 的权重声明支持 16384 上下文，是**适配器按 512 配置**的（`adapters/timesfm.py`），这一点与"它原生只有 512"是两回事；
-- **评估真值**：Savitzky–Golay 平滑（窗口 11、阶 2），只用于评估参考，不进模型输入；
-- **EOL**：SOH 首次 ≤ 80%；**闸门**——真值起点已 ≤ 80% 的 cell 不计入 EOL 分母（否则"未卜先知"）；
-- **红线**：依赖缺失必须报错，**禁止静默返回随机数**。
+- **Split**: 50% relative start (sensitivity 40/50/60%); predict the second half from the first;
+- **Normalisation**: `SOH = capacity / median(first 5 context points) × 100` — causal, no leakage;
+- **Inference**: recursive rolling, horizon = 64 per step (Chronos caps at 64, so hard forecasting is impossible by construction); identical for all models;
+- **Context**: by default each model uses its own cap (Bolt 2048 / T5 512 / TimesFM 512 / Moirai 512 / Lag-Llama 32); a `--max-context 512` run provides the **fair comparison** (main tables use 512).
+  Note TimesFM 2.5 weights declare 16384 support — the **adapter is configured at 512** (`adapters/timesfm.py`), which is not the same as "it natively only has 512";
+- **Ground truth for evaluation**: Savitzky–Golay smoothing (window 11, order 2), evaluation reference only, never fed to models;
+- **EOL**: first SOH ≤ 80%; **gating** — cells whose ground-truth start is already ≤ 80% are excluded from the EOL denominator (otherwise "clairvoyance");
+- **Red line**: missing dependencies must raise, **never silently return random numbers**.
 
 ---
 
-## 结果
+## Results
 
-### MIT-Stanford 主测试集（43 cells，起点 50%，统一 512 上下文）
+### MIT-Stanford main test set (43 cells, 50% start, unified 512 context)
 
-| 模型 | MAE ↓ | 95% CI | EOL 命中率 | 耗时 |
+| Model | MAE ↓ | 95% CI | EOL hit rate | Time |
 |---|---|---|---|---|
-| **Chronos-T5-small（零样本）** | **3.02** | [2.40, 3.47] | 0% | 319 s |
+| **Chronos-T5-small (zero-shot)** | **3.02** | [2.40, 3.47] | 0% | 319 s |
 | naive_linear | 4.07 | [3.76, 4.48] | 0% | 0.1 s |
-| Chronos-Bolt-small（零样本） | 4.11 | [3.77, 4.82] | 0% | 14 s |
+| Chronos-Bolt-small (zero-shot) | 4.11 | [3.77, 4.82] | 0% | 14 s |
 | exp_decay | 4.53 | [4.24, 5.52] | 0% | 58 s |
 | TimesFM 2.5-200M | 4.84 | [4.44, 5.06] | 0% | 31 s |
 | ARIMA | 5.15 | [4.89, 5.56] | 0% | 58 s |
 | Moirai-1.0-R-small | 5.33 | [4.72, 5.82] | 0% | 144 s |
 | naive_last | 5.65 | [5.19, 6.19] | 0% | 0.1 s |
-| Lag-Llama（原生 32 上下文） | 7.05 | [6.38, 8.53] | 100%（提前 197 循环） | 502 s |
-| **Chronos-Bolt + few-shot（19 支）** | **2.66** | — | 26% | 14 s |
+| Lag-Llama (native 32 context) | 7.05 | [6.38, 8.53] | 100% (197 cycles early) | 502 s |
+| **Chronos-Bolt + few-shot (19 cells)** | **2.66** | — | 26% | 14 s |
 
-MIT 内部 OOD（batch3，40 cells）：Chronos-Bolt **2.53** vs naive_linear 2.80 —— 基础模型首次反超。
+MIT internal OOD (batch3, 40 cells): Chronos-Bolt **2.53** vs naive_linear 2.80 — the first time a foundation model wins.
 
-### 跨库零样本（同一批模型，不重新训练）
+### Cross-dataset zero-shot (same models, no retraining)
 
-| 排名 | NASA PCoE（4 cells，EOL 分母 3） | CALCE UMD（14 cells，EOL 分母 8） |
+| Rank | NASA PCoE (4 cells, EOL denominator 3) | CALCE UMD (14 cells, EOL denominator 8) |
 |---|---|---|
-| 1 | **Chronos-T5 1.52**（EOL 3/3，误差 6.2 循环） | **naive_linear 4.62**（EOL 8/8） |
+| 1 | **Chronos-T5 1.52** (EOL 3/3, error 6.2 cycles) | **naive_linear 4.62** (EOL 8/8) |
 | 2 | exp_decay 3.65 | exp_decay 7.35 |
 | 3 | Chronos-Bolt 5.75 | Lag-Llama 9.41 |
 | 4 | naive_linear 6.11 | Chronos-T5 11.07 |
@@ -139,52 +283,46 @@ MIT 内部 OOD（batch3，40 cells）：Chronos-Bolt **2.53** vs naive_linear 2.
 | 7 | TimesFM 7.80 | Moirai 12.51 |
 | 8 | Lag-Llama 8.72 | naive_last 12.86 |
 
-**同一个 Chronos-T5，在 MIT 上比线性外推好 26%，在 CALCE 上比线性外推差 139%。**
-模型没变，变的是数据。
+**The same Chronos-T5 is 26% better than linear extrapolation on MIT and 139% worse on CALCE.** The model did not change; the data did.
 
 <p align="center">
   <img src="04_文档报告/figures/mit_fig1_trajectories.png" width="48%" />
   <img src="04_文档报告/figures/calce_fig1_trajectories.png" width="48%" />
 </p>
-<p align="center"><em>左：MIT（强膝点，基础模型敢于下探）；右：CALCE（近线性，基础模型把预测压成水平线）</em></p>
+<p align="center"><em>Left: MIT (strong knee — the foundation model dares to dive); right: CALCE (near-linear — it flattens the forecast)</em></p>
 
-### 统计显著性：哪些差距可以当结论
+### Statistical significance: which gaps are real conclusions
 
-- MIT 上 Chronos-T5 vs naive_linear：**Δ = −0.77，p < 0.001**（配对 Wilcoxon，n=43）——真实优势；
-- MIT 上 Chronos-Bolt vs naive_linear：**Δ = +0.13，p = 0.002**——**显著地更差，但差得没有意义**；
-- CALCE 上 4 个基础模型全部显著差于线性外推（p ≤ 0.001），Lag-Llama 例外（p = 0.078, n.s.）；
-- NASA n=4：**样本量不足，不做检验**，只报方向与极宽的 bootstrap 区间。
+- MIT, Chronos-T5 vs naive_linear: **Δ = −0.77, p < 0.001** (paired Wilcoxon, n=43) — a genuine advantage;
+- MIT, Chronos-Bolt vs naive_linear: **Δ = +0.13, p = 0.002** — **significantly worse, and the difference means nothing**;
+- CALCE: all four foundation models significantly worse than linear extrapolation (p ≤ 0.001); Lag-Llama is the exception (p = 0.078, n.s.);
+- NASA n=4: **insufficient sample, no test run**; direction and very wide bootstrap intervals reported only.
 
-> 这条"显著但无意义"是本基准刻意保留的方法论点：**p 值只能回答"是否可区分"，
-> 不能回答"是否值得换"**。因此全文按效应量 + 机制排序，而不是按 p 值排序。
+> This "significant but meaningless" case is a deliberate methodological point: **a p-value answers "are they distinguishable", not "is it worth switching"**. Everything below is ordered by effect size and mechanism, not by p-value.
 
-### 多随机种子方差
+### Multi-seed variance
 
-采样类模型（Chronos-T5 / Moirai / Lag-Llama）在默认种子之外另跑种子 1/2/3，
-共 3 库 × 3 模型 × 3 种子。完整表见 [`03_实验结果/种子方差.md`](03_实验结果/种子方差.md)。
+Sampling-based models (Chronos-T5 / Moirai / Lag-Llama) were additionally run with seeds 1/2/3: 3 datasets × 3 models × 3 seeds. Full table in [`03_实验结果/种子方差.md`](03_实验结果/种子方差.md).
 
-| 库 | Chronos-T5 | Moirai | Lag-Llama |
+| Dataset | Chronos-T5 | Moirai | Lag-Llama |
 |---|---|---|---|
-| MIT test（43 支） | 3.02 / 3.16 / 3.23 / 3.14（CV **2.7%**） | 5.33 / 5.13 / 5.12 / 5.12（2.0%） | 7.05 / 7.15 / 7.01 / 6.99（1.0%） |
-| NASA（4 支） | 1.52 / 2.29 / 1.84 / 1.07（**30.6%**） | 6.58 / 5.95 / 6.55 / 7.20（7.7%） | 8.72 / 8.77 / 9.80 / 9.47（5.8%） |
-| CALCE（14 支） | 11.07 / 10.65 / 10.18 / 10.66（3.4%） | 12.51 / 12.55 / 12.49 / 12.60（0.4%） | 9.41 / 7.75 / 9.09 / 9.31（**8.7%**） |
+| MIT test (43 cells) | 3.02 / 3.16 / 3.23 / 3.14 (CV **2.7%**) | 5.33 / 5.13 / 5.12 / 5.12 (2.0%) | 7.05 / 7.15 / 7.01 / 6.99 (1.0%) |
+| NASA (4 cells) | 1.52 / 2.29 / 1.84 / 1.07 (**30.6%**) | 6.58 / 5.95 / 6.55 / 7.20 (7.7%) | 8.72 / 8.77 / 9.80 / 9.47 (5.8%) |
+| CALCE (14 cells) | 11.07 / 10.65 / 10.18 / 10.66 (3.4%) | 12.51 / 12.55 / 12.49 / 12.60 (0.4%) | 9.41 / 7.75 / 9.09 / 9.31 (**8.7%**) |
 
-> 每格为「默认种子 / seed1 / seed2 / seed3」的中位 MAE，括号内为变异系数 CV。
+> Each cell is median MAE for "default seed / seed1 / seed2 / seed3"; CV in parentheses.
 
-- **MIT 与 CALCE 的排名在三个种子上无一处翻转**（CV 最大 8.7%，仍小于与下一名的差距）；
-- **NASA 的 CV 达 30.6%**（1.07–2.29），只能当方向性证据；
-- 种子极差（MIT T5 为 0.20）远小于 bootstrap CI 宽度（1.07）——**再加种子解决不了"只有 43 支电池"这个约束**。
+- **No ranking flips on MIT or CALCE across three seeds** (max CV 8.7%, still smaller than the gap to the next rank);
+- **NASA's CV reaches 30.6%** (1.07–2.29) — directional evidence only;
+- Seed range (MIT T5: 0.20) is far smaller than the bootstrap CI width (1.07) — **more seeds cannot fix "only 43 cells"**.
 
 ---
 
-## 概率口径：覆盖率几乎只由「区间宽度 / 误差量级」决定
+## Probabilistic metrics: coverage is set almost entirely by interval width
 
-基础模型原生输出预测分布（Chronos-Bolt 直接出分位数、TimesFM 有连续分位数头、
-Moirai / Lag-Llama 是采样解码）。本项目把分位数一起落盘，报 **CRPS**、
-**PICP@80%**（名义 80% 区间的实际覆盖率）、**MPIW**（平均区间宽度）。
-产物在二级目录 `03_实验结果/prob/`，不污染主表。
+Foundation models emit predictive distributions natively (Chronos-Bolt outputs quantiles directly, TimesFM has a continuous quantile head, Moirai / Lag-Llama decode by sampling). Quantiles are persisted alongside point forecasts, and we report **CRPS**, **PICP@80%** (actual coverage of the nominal 80% interval) and **MPIW** (mean prediction interval width). Artifacts live in `03_实验结果/prob/` and do not pollute the main tables.
 
-| 库 | 模型 | CRPS | PICP@80% | MPIW (SOH%) | MPIW / MAE |
+| Dataset | Model | CRPS | PICP@80% | MPIW (SOH%) | MPIW / MAE |
 |---|---|---|---|---|---|
 | MIT | chronos-bolt | 4.123 | 17.2% | 0.279 | 0.068 |
 | MIT | chronos | 3.042 | 14.6% | 0.458 | 0.151 |
@@ -202,451 +340,228 @@ Moirai / Lag-Llama 是采样解码）。本项目把分位数一起落盘，报 
 | CALCE | moirai | 12.520 | 9.1% | 0.492 | 0.039 |
 | CALCE | lag-llama | 8.339 | **76.1%** | 32.146 | 3.42 |
 
-- **覆盖率几乎只由 `MPIW / MAE` 这个比值决定，而且是个近乎二值的开关**：
-  15 个「模型 × 库」组合里，比值 < 1.0 的 9 组 PICP 全部落在 **8.8%–22.2%**，
-  比值 ≥ 1.5 的 6 组全部落在 **76.1%–94.4%**，中间**一个样本都没有**
-  （0.665 与 1.87 之间是空的；Spearman ρ = 0.83）。
-  要让名义 80% 的区间真的覆盖 80%，区间宽度至少要跟误差同量级；
-  而绝大多数组合只有误差的 **4%–15%**，窄了 1–2 个数量级。
-- 但**别把这个规律当因果**。做干预实验（只缩放区间半宽、`q50` 逐位不动）后：
-  把 MIT 的 chronos-bolt 拉宽 **15 倍**（把 `MPIW/MAE` 从 0.068 补到约 1.0，与那些天然
-  76% 覆盖率的组合同量级）覆盖率只从 17.2% 升到 **43.0%**；要真到 80% 得拉 **113 倍**，
-  代价是 CRPS 从 4.12 涨到 8.88（+115%）。9/15 个组合都需要 38–2000 倍的宽度，
-  CRPS 中位涨 465%。**结论：横截面规律是相关、不是因果——那些模型不是"区间宽所以覆盖住"，
-  而是分布形状本来就更接近真实误差。形状错的分布等比放大只会又宽又错。**
-  反过来，"太宽"是可以用 1 个标量收回来的：Lag-Llama 在 MIT 收窄到 0.62× 后
-  覆盖率恰好 80%、CRPS 降 25%。详见
-  [`04_文档报告/区间宽度校准.md`](04_文档报告/区间宽度校准.md)。
-- **CRPS 与 MAE 高度同向（比值中位数 1.00–1.01）**：区间极窄时 CRPS 几乎退化成
-  `|y − q50|`，在窄区间里提供不了比 MAE 更多的排序信息；只有宽度到位后
-  （NASA 的 chronos 1.91、lag-llama 0.77–1.39）CRPS 才开始明显区别于 MAE。
-  更要紧的是：**CRPS 不能当校准目标**——它奖励"更窄"，11/15 个组合的最优 w 都退化到
-  `w→0`。只报 CRPS 会系统性掩盖"区间太窄"这个失败模式，所以本项目同时报 PICP 与 MPIW。
-  完整表见 [`04_文档报告/区间宽度校准.md`](04_文档报告/区间宽度校准.md)；
-  EOL 三量表见 [`04_文档报告/EOL重设计.md`](04_文档报告/EOL重设计.md)。
+- **Coverage is governed almost entirely by `MPIW / MAE`, and it behaves like a near-binary switch.** Across 15 model × dataset combinations, the 9 groups with ratio < 1.0 all land in **8.8%–22.2%** PICP, and the 6 groups with ratio ≥ 1.5 all land in **76.1%–94.4%** — **not a single sample in between** (the gap between 0.665 and 1.87 is empty; Spearman ρ = 0.83). For a nominal 80% interval to actually cover 80%, its width must be at least on the order of the error; most combinations sit at **4%–15%** of the error, one to two orders of magnitude too narrow.
+- **But do not read that as causation.** An intervention that scales only the interval half-width (leaving `q50` untouched) shows: widening MIT's chronos-bolt **15×** (bringing `MPIW/MAE` from 0.068 to about 1.0, on par with the groups that natively hit 76% coverage) raises coverage only from 17.2% to **43.0%**; reaching 80% requires **113×**, at the cost of CRPS rising from 4.12 to 8.88 (+115%). 9 of 15 combinations need 38–2000× width, median CRPS +465%. **The cross-sectional pattern is correlation, not causation — those models do not "cover because they are wide", their distribution shape happens to match the error better. Scaling a misshapen distribution just makes it wide and wrong.** Conversely, "too wide" *is* recoverable with a single scalar: narrowing Lag-Llama on MIT to 0.62× lands exactly at 80% coverage with CRPS down 25%. See [`04_文档报告/区间宽度校准.md`](04_文档报告/区间宽度校准.md).
+- **CRPS tracks MAE closely (median ratio 1.00–1.01)**: with very narrow intervals CRPS degenerates to `|y − q50|` and provides no extra ordering information; only once width is adequate (NASA chronos 1.91, lag-llama 0.77–1.39) does CRPS separate from MAE. More importantly, **CRPS must not be used as a calibration target** — it rewards narrowness, and the optimal `w` degenerates to `w→0` in 11/15 combinations. Reporting CRPS alone systematically hides the "intervals are too narrow" failure mode, which is why this benchmark reports PICP and MPIW alongside it.
 
-> ⚠️ **CRPS ≥ |y − q50| 并不普遍成立**，所以"CRPS 小于同口径 MAE"不是 bug 判据。
-> 反例：分位数函数近似 U[0,10]（中位数 5），取 y = −100，点质量分布 CRPS = 105，
-> 而该分布 CRPS ≈ 103.8 < 105。真正成立的是 `d/dy CRPS = 2F(y) − 1`——
-> 固定分布下 CRPS 在中位数处取全局极小（离散分位函数下是一段平台）。
-> 判断概率指标可信与否，只能查**分位数链路与点预测链路是否同一条轨迹**：
-> `run_benchmark.py` 已加闸门 `metrics.median_deviation()`，当前 18 个组合
-> 全部 `max|point − q50| = 0.0e+00`（分位数保序修复与采样链路的对齐，见
-> [`04_文档报告/执行记录-2026-10-20.md`](04_文档报告/执行记录-2026-10-20.md) 坑表第 17、18 条）。
+> ⚠️ **`CRPS ≥ |y − q50|` does not hold in general**, so "CRPS below same-protocol MAE" is not a bug criterion. Counter-example: with a quantile function approximating U[0,10] (median 5), taking y = −100 gives a point-mass CRPS of 105, while the distribution's CRPS ≈ 103.8 < 105. What does hold is `d/dy CRPS = 2F(y) − 1` — for a fixed distribution, CRPS attains its global minimum at the median (a plateau under a discrete quantile function). The only way to judge whether probabilistic metrics are trustworthy is to check whether the quantile path and the point-forecast path are the same trajectory: `run_benchmark.py` now gates on `metrics.median_deviation()`, and all 18 current combinations report `max|point − q50| = 0.0e+00` (see pitfalls 17 and 18 in [`04_文档报告/执行记录-2026-10-20.md`](04_文档报告/执行记录-2026-10-20.md)).
 
-**EOL 指标重设计**：早期版本的"命中率"在 MIT 上恒为 0%（数据在 EOL 处截断），在
-lag-llama 上恒为 100%——两个常数都不含信息量。补三个量后（`RUL 相对误差` /
-`带符号过冲循环数` / `未穿越裕度`）才能看出：lag-llama 的 100% 命中其实是
-**比真值早 197 个循环就跌破 80%**（过冲 −197、RUL 相对误差 0.71），
-而零样本 Bolt/T5/TimesFM/Moirai 的"0%"分别是**还差 16.1 / 12.7 / 17.2 / 17.8
-个 SOH 点**没触到——差距巨大且可排序。
+**EOL metric redesign.** The earlier "hit rate" was a constant on both ends: 0% on MIT (data is truncated at EOL) and 100% for lag-llama — neither carries information. Adding three quantities (`RUL relative error` / `signed overshoot in cycles` / `margin to crossing`) makes it orderable: lag-llama's 100% is actually **crossing 80% 197 cycles early** (overshoot −197, RUL relative error 0.71), while the "0%" of zero-shot Bolt/T5/TimesFM/Moirai means they are still **16.1 / 12.7 / 17.2 / 17.8 SOH points short** of crossing — a large and orderable difference.
 
 ---
 
-## 机制：不是"更懂电池"，而是"敢不敢外推"
+## Mechanism: not "understands batteries", but "dares to extrapolate"
 
-对每个 cell 计算两个量：
+For each cell we compute two quantities:
 
-- `knee_ratio` = 预测段真值斜率 / 上下文真值斜率（**数据侧**，需要多少加速）；
-- `pred_ratio` = 预测段降幅 / 真值降幅（**模型侧**，实际外推了多少）。
+- `knee_ratio` = ground-truth slope after the split / ground-truth slope in context (**data side**: how much acceleration is needed);
+- `pred_ratio` = predicted drop after the split / true drop (**model side**: how much it actually extrapolated).
 
-| 库 | 需要（`knee_ratio`） | Chronos-T5 给出 | 线性外推给出 | 结果 |
+| Dataset | Needed (`knee_ratio`) | Chronos-T5 delivers | Linear extrapolation delivers | Outcome |
 |---|---|---|---|---|
-| MIT | 8.88 | 0.32（全场最高） | 0.15 | 基础模型赢 |
-| CALCE | 1.65 | **0.01**（几乎水平线） | 0.54 | 线性外推赢 |
+| MIT | 8.88 | 0.32 (highest of all) | 0.15 | foundation model wins |
+| CALCE | 1.65 | **0.01** (almost a flat line) | 0.54 | linear extrapolation wins |
 
-定义失配度 `mismatch = |log(pred_ratio / knee_ratio)|`，与 MAE 的 Spearman 秩相关：
-MIT **+0.98**、NASA +0.93、CALCE +0.64（均不含 Lag-Llama）——
-**"外推幅度是否匹配数据的加速需求"几乎单独决定了排名**。
+Define mismatch `mismatch = |log(pred_ratio / knee_ratio)|`. Its Spearman rank correlation with MAE: MIT **+0.98**, NASA +0.93, CALCE +0.64 (all excluding Lag-Llama) — **whether the extrapolation magnitude matches the data's required acceleration nearly determines the ranking on its own**.
 
-Lag-Llama 是唯一偏离者（加入后 MIT ρ 掉到 +0.38）：它的降幅总量对得上（`pred_ratio` 1.43），
-但**路径是错的**——递归 64 步每轮带噪声，曲线剧烈锯齿化，还会提前 197 循环跌破 80%。
-这说明"总降幅"是必要条件而非充分条件。
+Lag-Llama is the sole outlier (including it drops MIT ρ to +0.38): its total drop matches (`pred_ratio` 1.43) but **the path is wrong** — recursive 64-step decoding adds noise each round, the curve becomes violently saw-toothed, and it crosses 80% 197 cycles early. Total drop is necessary, not sufficient.
 
 <p align="center">
   <img src="04_文档报告/figures/fig5_shrinkage.png" width="62%" />
 </p>
 
-### 跨库迁移：微调学到的是"敢不敢外推"，不是"该多陡"
+### Cross-dataset transfer: fine-tuning learns "dare to extrapolate", not "how steep"
 
-把 **MIT 微调后的 Chronos-Bolt（k=19）原样搬到 CALCE / NASA**，不做任何再训练：
+Moving **Chronos-Bolt fine-tuned on MIT (k=19)** to CALCE / NASA unchanged, with no retraining:
 
-| 库 | 零样本 Bolt | MIT 微调后 | 变化 |
+| Dataset | Zero-shot Bolt | After MIT fine-tuning | Change |
 |---|---|---|---|
-| NASA（4 支） | 5.75 | **4.54** | −21% |
-| CALCE 全体中位（14 支） | 11.94 | 13.24 | +11%（变差） |
-| CALCE 正常起点（9 支） | 12.61 | **8.15** | **−35%** |
-| CALCE 起点已 ≤80%（5 支） | 9.59 | 45.36 | +373%（灾难） |
+| NASA (4 cells) | 5.75 | **4.54** | −21% |
+| CALCE all, median (14 cells) | 11.94 | 13.24 | +11% (worse) |
+| CALCE normal starts (9 cells) | 12.61 | **8.15** | **−35%** |
+| CALCE starts already ≤80% (5 cells) | 9.59 | 45.36 | +373% (disaster) |
 
-EOL 命中率：CALCE **0% → 88%**，NASA 0% → 33%。
+EOL hit rate: CALCE **0% → 88%**, NASA 0% → 33%.
 
-微调真正迁移过去的是"敢往下画"这个先验（`pred_ratio` 0.016 → 敢外推），
-但"该画多陡"没有迁移好：起点已经偏低的电池被按 MIT 先验继续外推到接近 0
-（单支 MAE 最高 109.8），把整体中位数反而拉高。
-**工程判据：部署前先看起点 SOH，起点已明显低于额定健康度时必须重新标定衰减幅度。**
+What transfers is the prior "dare to draw downward" (`pred_ratio` 0.016 → willing to extrapolate); "how steep to draw" does not transfer well — cells starting low get pushed toward 0 under the MIT prior (single-cell MAE up to 109.8), which drags the overall median up. **Engineering rule: check the starting SOH before deployment; if it is already well below rated health, the fade amplitude must be re-calibrated.**
 
 ---
 
-## 2 个参数的校准头
+## The 2-parameter calibration head
 
-如果收益主要来自"敢不敢外推"这一个自由度，那就不必动 190 MB 权重。冻结
-Chronos-Bolt，只在输出端学 2 个数：
+If the gain comes mainly from one degree of freedom — "dare to extrapolate" — there is no need to touch 190 MB of weights. Freeze Chronos-Bolt and learn just two numbers at the output:
 
 ```
-p' = c + s·(p − c) + b        c = 当前上下文最后一个点，逐 chunk 施加
+p' = c + s·(p − c) + b        c = last point of the current context, applied per chunk
 ```
 
-`s` = 模型预测的每步变化量打几折，`b` = 每步额外恒定漂移。第三个加性参数在递归下
-与 `b` **不可辨识**（都表现为每步漂移），所以这就是 2 个可辨识参数。
-`s > 0` 时变换单调，分位数序天然保持，同一组参数可直接用于概率链路。
+`s` = what fraction of the model's per-step change to keep; `b` = a constant per-step drift. A third additive parameter is **unidentifiable** under recursion (both manifest as per-step drift), so these are the 2 identifiable parameters. When `s > 0` the transform is monotone, quantile order is preserved, and the same parameters apply directly to the probabilistic path.
 
-拟合：MIT train（batch1），起点 0.5、上下文 512、chunk 64，跨 cell 的 MAE_smooth
-中位数作目标，两阶段网格搜索（7×7 粗 + 5×5 细，共 74 次前向，**零梯度**）。
+Fitting: MIT train (batch1), 50% start, context 512, chunk 64, targeting the cross-cell median `MAE_smooth`; two-stage grid search (7×7 coarse + 5×5 fine, 74 forward passes, **zero gradients**).
 
-| 拟合集 | s | b | 拟合集内中位 MAE | 同集零样本 | 改善 |
+| Fitting set | s | b | Median MAE in-set | Zero-shot same set | Improvement |
 |---|---|---|---|---|---|
-| 41 支（默认） | **1.65** | **0.00** | 1.954 | 4.368 | −55.3% |
-| 19 支（与微调同数据） | 1.60 | 0.00 | 1.435 | 4.016 | −64.3% |
+| 41 cells (default) | **1.65** | **0.00** | 1.954 | 4.368 | −55.3% |
+| 19 cells (same data as fine-tuning) | 1.60 | 0.00 | 1.435 | 4.016 | −64.3% |
 
-`s ≈ 1.6`、`b = 0`——**单个参数就够了**，且两组不同数据子集给出几乎相同的 `s`。
-这正是机制假设的直接印证：模型不是画错了形状，而是不敢把已看到的斜率推到底。
+`s ≈ 1.6`, `b = 0` — **a single parameter suffices**, and two different data subsets yield nearly identical `s`. That is direct confirmation of the mechanism hypothesis: the model is not drawing the wrong shape, it just will not carry the observed slope to its conclusion.
 
-MIT test 上（全部 ctx512 口径）：
+On the MIT test set (all at ctx512):
 
-| 方案 | 参数/数据预算 | MAE_smooth | 相对零样本 | EOL 命中率 |
+| Method | Params / data budget | MAE_smooth | vs zero-shot | EOL hit rate |
 |---|---|---|---|---|
-| 零样本 Chronos-Bolt | 0 参数 / 0 支 | 4.110 | — | 0% |
-| **2 参数校准头（41 支）** | **2 标量 / 41 支 / 无梯度** | **3.256** | **−20.8%** | **47%** |
-| 2 参数校准头（19 支，同微调数据） | 2 标量 / 19 支 / 无梯度 | 3.212 | −21.8% | 40% |
-| 微调 1 支 | ~60M 权重 / 1 支 / 300 步 | 3.241 | −21.1% | 5% |
-| 微调 4 支 | ~60M 权重 / 4 支 / 300 步 | 2.864 | −30.3% | 33% |
-| 微调 8 支 | ~60M 权重 / 8 支 / 300 步 | 2.745 | −33.2% | 37% |
-| 微调 19 支 | ~60M 权重 / 19 支 / 300 步 | **2.656** | **−35.4%** | 26% |
+| Zero-shot Chronos-Bolt | 0 params / 0 cells | 4.110 | — | 0% |
+| **2-parameter head (41 cells)** | **2 scalars / 41 cells / no gradients** | **3.256** | **−20.8%** | **47%** |
+| 2-parameter head (19 cells, same as fine-tuning) | 2 scalars / 19 cells / no gradients | 3.212 | −21.8% | 40% |
+| Fine-tune 1 cell | ~60M weights / 1 cell / 300 steps | 3.241 | −21.1% | 5% |
+| Fine-tune 4 cells | ~60M weights / 4 cells / 300 steps | 2.864 | −30.3% | 33% |
+| Fine-tune 8 cells | ~60M weights / 8 cells / 300 steps | 2.745 | −33.2% | 37% |
+| Fine-tune 19 cells | ~60M weights / 19 cells / 300 steps | **2.656** | **−35.4%** | 26% |
 
-- **2 个标量 ≈ 1 支电池上的全量微调**（3.256 vs 3.241，差 0.5%），但不需要任何反向传播；
-- 拿到 19 支微调收益的 **60%**，参数量差 7 个数量级；
-- **EOL 命中率 47%，反超所有微调档位**（5–37%）；
-- 概率侧同步改善：CRPS 4.123 → 3.041，PICP 17.2% → 24.7%（仍远低于名义 80%）。
+- **2 scalars ≈ full fine-tuning on 1 cell** (3.256 vs 3.241, a 0.5% gap), with no backpropagation;
+- Captures **60%** of the 19-cell fine-tuning gain at 7 orders of magnitude fewer parameters;
+- **EOL hit rate 47%, beating every fine-tuning setting** (5–37%);
+- Probabilistic side improves too: CRPS 4.123 → 3.041, PICP 17.2% → 24.7% (still far below nominal 80%).
 
-**边界（重要）**：把 MIT 上拟合的 `s = 1.65` 直接搬到其他库**不成立**——
+**Boundary (important)**: carrying MIT's fitted `s = 1.65` to other datasets **does not work** —
 
-| 库 | 零样本 MAE | 校准 MAE | Δ% | PICP |
+| Dataset | Zero-shot MAE | Calibrated MAE | Δ% | PICP |
 |---|---|---|---|---|
 | MIT | 4.110 | 3.256 | −20.8% | 17.2% → 24.7% |
 | NASA | 5.747 | 5.361 | −6.7% | 22.2% → 41.5% |
 | CALCE | 12.600 | 12.755 | **+1.2%** | 9.3% → 17.2% |
 
-CALCE 上是**负迁移**：`s` 学的是"**这个数据分布**该放大多少"，不是"这个模型的属性"，
-必须在目标分布上重新拟合；在线估计 `s` 的三条路都不可行（见下文"在线代理"一节）。
-
-复现：
+CALCE shows **negative transfer**: `s` learns "how much to amplify *this data distribution*", not a property of the model, so it must be refitted on the target distribution. All three routes to estimating `s` online fail (see the online-proxy section).
 
 ```bash
-# 1) 拟合 2 个参数（约 11 分钟，零梯度）
+# 1) Fit the 2 parameters (~11 min, zero gradients)
 python 01_源代码/calibrate_head.py --dataset mit --split train
 
-# 2) 在三个库上评测（产物进主表 + prob/ 二级目录）
+# 2) Evaluate on all three datasets (artifacts go to main tables + prob/)
 bash scripts/run_cal.sh all
 
-# 3) 生成三方对比表
+# 3) Build the three-way comparison table
 python 01_源代码/analyze_calibration.py
 ```
 
-完整表见 [`04_文档报告/校准头对比.md`](04_文档报告/校准头对比.md)。
+Full table: [`04_文档报告/校准头对比.md`](04_文档报告/校准头对比.md).
 
 ---
 
-## 在线代理：拐点能从上下文估出来，模型选择不能
+## Online proxies: the knee is estimable, model selection is not
 
-用 9 个纯上下文特征（上下文累计衰减、全段/近段斜率外推降幅、曲率、线性拟合 R²、
-残差噪声、二阶差分自相关、上下文长度），在 61 个 cell 上做 Spearman + **留一库**：
+Using 9 pure context features (cumulative context drop, full/near-segment slope-extrapolated drop, curvature, linear-fit R², residual noise, second-difference autocorrelation, context length) across 61 cells, with Spearman plus **leave-one-dataset-out**:
 
-| 问题 | 能否只从上下文估 | 证据 |
+| Question | Estimable from context alone? | Evidence |
 |---|---|---|
-| 拐点 `knee_ratio` | **能** | `drop_ctx` 合并 ρ = **−0.96**，MIT 库内 ρ = **−0.99** |
-| 该库是「线性」还是「有拐点」 | **能** | 三库 `drop_ctx` 中位 1.4% / 16.8% / 15.7%，`knee_ratio` 中位 8.9 / 0.65 / 1.65 |
-| 该信谁（逐 cell 选模型） | **不能** | 库内 ρ 最高 0.61；留一库路由 **6/6** 没跑赢「两者取优」 |
+| Knee `knee_ratio` | **Yes** | `drop_ctx` pooled ρ = **−0.96**, within-MIT ρ = **−0.99** |
+| Is this dataset "linear" or "kneed" | **Yes** | three-dataset `drop_ctx` median 1.4% / 16.8% / 15.7%; `knee_ratio` median 8.9 / 0.65 / 1.65 |
+| Who to trust (per-cell model selection) | **No** | within-dataset ρ max 0.61; leave-one-dataset-out routing loses **6/6** to "take the better of two" |
 
-结论有两条。**逐 cell 选优的天花板本身就很小**——MIT 最优单模型 3.03，6 候选完美选优只有
-2.98（**−1.7%**）；NASA 是 0%；只有 CALCE 有 20% 空间（6.04 → 4.82）。而留一库学到的规则
-在 CALCE 上只能做到 7.96，还不如直接线性外推的 6.04：模型优劣是**库级**现象，不是 cell 级现象，
-「按上下文曲率路由 / 加权集成」没有可赚的钱。可部署的落点是：拿到一个新库，先算上下文的
-`drop_ctx` 与 `slope_all`——「已经掉了 15% 以上、后面基本线性」的库（CALCE / NASA 型）
-用线性外推，「只掉了 1–2%、拐点还在前方」的库（MIT 型）用基础模型。
+Two conclusions. **The ceiling for per-cell selection is small to begin with** — MIT best single model 3.03, perfect 6-candidate oracle only 2.98 (**−1.7%**); NASA 0%; only CALCE has 20% headroom (6.04 → 4.82). And the rule learned by leave-one-dataset-out reaches only 7.96 on CALCE, worse than plain linear extrapolation at 6.04: **model superiority is a dataset-level phenomenon, not a cell-level one**, so routing or weighted ensembling by context curvature has no money in it. The deployable takeaway: for a new dataset, compute `drop_ctx` and `slope_all` on the context — "already dropped 15%+, then basically linear" datasets (CALCE / NASA type) call for linear extrapolation, "dropped only 1–2%, knee still ahead" datasets (MIT type) call for foundation models.
 
-### 区间宽度也不能在线估
+### Interval width cannot be estimated online either
 
-逐 cell 的区间宽度 `w` 无法从上下文估出。试过两条路：9 个纯上下文特征回归，最强特征其实是
-horizon 长度（13/15），覆盖率仍偏 10–20pp；conformal 式上下文内自测（切两段、前段当输入、
-后段当真值，在伪任务上求 `w_hat`），118 cell 上覆盖率偏离 65.1pp → 38.2pp，仍显著过度自信。
-乘一个事后因子 `k` 能降到 14.9pp，但同样作弊预算下的库常数基线是 11.4pp——净收益为负。
-自测还会主动破坏本来就好的模型：NASA 的 timesfm 不校准时 PICP 已是 76.2%，自测把它
-「修正」到 48.8%。
+Per-cell interval width `w` cannot be recovered from context. Two routes were tried: regression on 9 pure context features (the strongest feature is actually horizon length, 13/15), still 10–20pp off on coverage; and conformal-style in-context self-testing (split in two, first half as input, second half as truth, solve `w_hat` on a pseudo-task), which moves coverage deviation from 65.1pp to 38.2pp across 118 cells — still significantly overconfident. A post-hoc factor `k` brings it to 14.9pp, but a dataset-constant baseline under the same cheating budget reaches 11.4pp — **net negative**. Self-testing also actively damages models that were already fine: NASA's timesfm is at 76.2% PICP uncalibrated, and self-testing "corrects" it down to 48.8%.
 
 ```bash
-python 01_源代码/online_proxy.py     # 零推理，只读已落盘的 predictions / quantiles
-python 01_源代码/conformal_w.py --skip-inference   # 读已提交产物重建文档
+python 01_源代码/online_proxy.py     # zero inference, reads persisted predictions / quantiles
+python 01_源代码/conformal_w.py --skip-inference   # rebuild docs from committed artifacts
 ```
 
-完整表见 [`04_文档报告/在线代理.md`](04_文档报告/在线代理.md)、
-[`04_文档报告/上下文自测.md`](04_文档报告/上下文自测.md)。
+Full tables: [`04_文档报告/在线代理.md`](04_文档报告/在线代理.md), [`04_文档报告/上下文自测.md`](04_文档报告/上下文自测.md).
 
 ---
 
-## 快速开始
-
-### 0. 环境
-
-```bash
-git clone <this-repo> && cd <this-repo>
-
-# 核心依赖（跑基线 + 加载数据即可，无需任何模型库）
-bash scripts/setup_env.sh          # macOS / Linux / Git-Bash
-# 或：scripts\setup_env.bat         # Windows CMD
-```
-
-基础模型依赖见 [`requirements-models.txt`](requirements-models.txt)。**两个环境**是刻意的：
-
-- `venv`（Python 3.13）：Chronos / TimesFM / 全部基线 / few-shot 微调；
-- `venv-moirai`（Python **3.12**）：Moirai / Lag-Llama —— uni2ts 硬依赖 `numpy~=1.26`，
-  没有 cp313 wheel，与 `torch 2.14 + chronos-forecasting` 无法共存于同一 3.13 环境。
-
-CPU 即可，无需 GPU。本文所有数字都是在 CPU（Windows 11 / torch 2.14.1）上跑出来的。
-
-### 1. 数据
-
-代码只**引用**数据路径，不复制、不改写原始文件。把数据放成下面这样即可零配置：
-
-```
-data/
-├── MIT/          mit_cells.parquet, mit_cycles.parquet, MATR.zip
-├── NASA_PCoE/    1. BatteryAgingARC-FY08Q4/*.mat
-└── CALCE_UMD/    CS2_*.zip / CX2_*.zip
-```
-
-也可以不搬数据，用环境变量指向真实位置：
-
-```bash
-export BATTERY_DATA_ROOT=/path/to/datasets   # 总根
-export MIT_CELLS=/path/mit_cells.parquet     # 或逐个覆盖
-export NASA_MAT_DIR=/path/1.\ BatteryAgingARC-FY08Q4
-export CALCE_DIR=/path/CALCE_UMD
-```
-
-或复制 [`01_源代码/configs/local_paths.example.py`](01_源代码/configs/local_paths.example.py)
-为 `configs/local_paths.py` 直接写死（该文件已被 `.gitignore` 排除）。
-各数据集的来源、字段与获取方式见 [`02_数据集链接/`](02_数据集链接/)。
-
-### 2. 权重
-
-```bash
-export HF_ENDPOINT=https://hf-mirror.com      # 国内网络；海外可省略
-export HF_HUB_DISABLE_XET=1                   # 镜像不支持 xet，不关会中断
-
-hf download amazon/chronos-bolt-small       --local-dir shared/models/chronos-bolt-small
-hf download amazon/chronos-t5-small         --local-dir shared/models/chronos-t5-small
-hf download google/timesfm-2.5-200m-pytorch --local-dir shared/models/timesfm-2.5-200m-pytorch
-hf download Salesforce/moirai-1.0-R-small   --local-dir shared/models/moirai-1.0-R-small
-# Lag-Llama 权重：shared/models/lag-llama/lag-llama.ckpt（来源见 requirements-models.txt）
-```
-
-`resolve_model_ref()` 会自动优先用本地目录，**运行时不联网**。
-
-### 3. 跑
-
-```bash
-cd 01_源代码
-
-# 一格：MIT 主测试集上跑全部经典基线
-../venv/Scripts/python.exe run_benchmark.py --model all-baselines --dataset mit --split test
-
-# 一个基础模型
-../venv/Scripts/python.exe run_benchmark.py --model chronos-bolt --dataset mit --split test
-
-# 跨库
-../venv/Scripts/python.exe run_benchmark.py --models chronos-bolt,naive_linear --dataset calce
-
-# 汇总表 / 显著性 / 机制 / 种子方差
-../venv/Scripts/python.exe report.py
-../venv/Scripts/python.exe stats_significance.py
-../venv/Scripts/python.exe analyze_shrinkage.py
-../venv/Scripts/python.exe analyze_seeds.py
-
-# naive_linear 拟合窗口消融（本文 ⌊n/2⌋ vs 整段，同时与已发表数字对账）
-../venv/Scripts/python.exe ablate_naive_linear.py
-
-# few-shot 曲线（横轴按**实际**支持集大小 1/4/7/19 绘制）
-../venv/Scripts/python.exe plot_fewshot.py
-
-# 概率口径（CRPS / PICP / MPIW + EOL 重设计），产物进二级目录 prob/
-bash ../scripts/run_prob.sh all
-../venv/Scripts/python.exe analyze_eol2.py
-
-# 2 参数校准头：拟合 → 三库评测 → 三方对比
-../venv/Scripts/python.exe calibrate_head.py --dataset mit --split train
-bash ../scripts/run_cal.sh all
-../venv/Scripts/python.exe analyze_calibration.py
-
-# 图（--runs 用分号分隔：结果目录名本身含逗号，所以不能用逗号分隔）
-../venv/Scripts/python.exe figures.py --prefix mit_ \
-  --runs "mit-zero-chronos-bolt,chronos,timesfm,naive_linear-ctx512;mit-zero-moirai;mit-zero-lag-llama;mit-zero-naive_last,naive_linear,exp_decay-refactor;mit-zero-arima"
-../venv/Scripts/python.exe figures.py --prefix nasa_ \
-  --runs "nasa-zero-chronos-bolt,chronos,timesfm,naive_linear,naive_last,exp_decay;nasa-zero-moirai;nasa-zero-lag-llama"
-../venv/Scripts/python.exe figures.py --prefix calce_ \
-  --runs "calce-zero-chronos-bolt,chronos,timesfm,naive_linear,naive_last,exp_decay;calce-zero-moirai;calce-zero-lag-llama"
-```
-
-一键全矩阵（表 1–表 5 + 图 1–图 6 的原始数据，约 10 小时 CPU）：
-
-```bash
-bash scripts/run_matrix.sh all     # 推理部分：mit / nasa / calce / sens / seed
-```
-
-另外两段**不重跑推理**，只追加训练与汇总结果：
-
-```bash
-bash scripts/run_matrix.sh extra    # few-shot 微调（ft1/ft4/ft8/ftall）+ 微调评测
-                                     # + 跨库迁移 + ablate_naive_linear.py
-bash scripts/run_matrix.sh report   # 纯汇总：report / 显著性 / 机制 / 种子方差 / 消融
-                                     # + EOL重设计 / 校准头对比 / 区间宽度干预
-                                     # + 在线代理 / 上下文自测 / 上下文范围
-                                     # + 文档一致性 / plot_fewshot / figures × 三库
-```
-
-`extra` 依赖已跑完的 `mit` / `calce` / `nasa` 推理格；`report` 只读 `03_实验结果/`,
-是**从干净克隆复现图与汇总产物**的标准入口（已在多次干净克隆上验证逐位一致）。
-它也会跑五项无第三方依赖的回归测试：`tests/test_cache_fingerprint.py`（16 项，
-锁死 CALCE 缓存指纹的四个坑）、`tests/test_online_proxy.py`（36 项，
-锁死在线代理的特征口径——尤其是 `slope_*` 的 horizon 归一化）与
-`tests/test_conformal_w.py`（20 项，锁死伪任务的切分与 `T_MIN` 兜底）。
-
-`report` 段有 4 个步骤需要原始数据（`calibrate_width` / `online_proxy` /
-`diag_context_range` / `ablate_naive_linear`）。没有数据集时会打印
-`[跳过]` 并以退出码 0 结束，**不会**用空结果覆盖已提交产物；
-推理段不设这个开关，那里缺数据仍然硬失败。
-收尾会打印「N 成功 / M 失败」，有任何一步失败整条链返回非零。
-
-输出在 `03_实验结果/<dataset>-<setting>-<models>/`：`per_cell_*.csv`、`summary.json`
-（含协议参数、包版本、权重路径、耗时、随机种子）、`predictions_*.npz`。
-
----
-
-## 目录结构
+## Repository layout
 
 ```
 01_源代码/
-├── configs/config.py        路径解析 + 协议参数 + 模型注册表 + HF 镜像（唯一真源）
-├── data/loaders.py          MIT / NASA / CALCE 真实加载器（CALCE 带来源指纹的 parquet 缓存）
-├── tests/                    无第三方依赖的回归测试（缓存指纹 / 在线代理 / 伪任务切分，共 214 项）
-├── data/protocol.py         清洗 / SOH 归一 / 相对起点切分 / 平滑参考
-├── adapters/base.py         Forecaster 接口 + 批量滚动递归 + 分位数接口 + 分位数穿越修复
-├── adapters/                chronos / timesfm / lagllama / moirai（各自独立种子推进）
-├── adapters/calibrated.py   2 参数单调校准头（冻结基础模型，p' = c + s(p-c) + b）
-├── baselines/classic.py     naive_last / naive_linear / exp_decay / ARIMA
-├── evaluation/metrics.py    MAE / RMSE(SOH) + EOL 误差 + RUL 误差 + 命中率
-│                            + CRPS / PICP / MPIW + EOL 重设计三量
-├── run_benchmark.py         一行命令复现一格（--models / --max-context / --start-fracs / --seed）
-├── calibrate_head.py        拟合校准头的 (s, b)（两阶段网格，零梯度）
-├── report.py                汇总 summary.json → 结果表.md + 汇总表.csv
-├── stats_significance.py    bootstrap CI + 配对 Wilcoxon → 显著性检验.md
-├── analyze_shrinkage.py     pred_ratio / 失配度 / 秩相关 → 衰减保留率.csv + fig5
-├── analyze_eol2.py          EOL 重设计汇总 → 汇总_EOL重设计.csv + EOL重设计.md
-├── analyze_calibration.py   零样本 / 2 参数 / 微调三方对比 → 校准头对比.md
-├── calibrate_width.py       区间宽度干预（绕中位数缩放半宽，零模型重跑）→ 区间宽度校准.md
-├── online_proxy.py          在线代理：9 个上下文特征 → 拐点 / 模型选择 / 宽度（零推理）
-├── diag_context_range.py    上下文长度可行性核查：长度分布 + 夹到 512 的口径影响（零推理）
-├── conformal_w.py           上下文内自测（conformal 式伪任务）→ 上下文自测.md
-├── analyze_seeds.py         多种子方差与排名翻转检查 → 种子方差.md
-├── diag_curvature.py        knee_ratio（数据侧衰减加速比）
-├── ablate_naive_linear.py   naive_linear 拟合窗口消融（⌊n/2⌋ vs 整段）
-├── fewshot_finetune.py      Chronos-Bolt 真梯度微调（k 支电池）+ 跨库迁移
-├── plot_fewshot.py          fig6：MAE / EOL 随**实际**支持集大小的变化
-├── figures.py               轨迹图 / 箱线图 / EOL 命中率 / 起点敏感性
-└── 一次性诊断（不进 report 链）
-    ├── backfill_ctx.py      给历史 predictions_*.npz 回填 `key|ctx`（免重跑推理）
-    ├── diag_calce_files.py  逐个 zip 文件判断"是不是容量老化测试"
-    ├── diag_calce_depth.py  按 Vmax/Vmin 判"真正全深度"的循环数（27 → 14 的依据）
-    └── diag_calce_cells.py  按放电量/额定容量判全深度（第二条独立依据）
-02_数据集链接/                三个数据集的来源、字段与获取方式（只写路径，不存数据）
-03_实验结果/                  每次运行的 per_cell / summary / predictions + 汇总与检验
-  ├── prob/                  概率口径矩阵（CRPS/PICP/MPIW + EOL 重设计），二级目录不进主表
-  ├── calib/                 校准头参数与网格曲面（calibration_head.json / grid_surface.csv）
-  ├── width_calib/           区间宽度扫描（width_calibration.csv + 逐组合曲线 + 跨库迁移）
-  ├── online_proxy/          逐 cell 上下文特征 / 逐 cell w_cov / Spearman 表 / 路由 / 留一库
-  └── conformal_w/           上下文内自测（horizon 不变性 + 逐 cell w_hat / w_oracle / 三种 PICP）
-04_文档报告/                  短文初稿、方案、执行记录、结果表、figures、_history（历史材料）
+├── configs/config.py         path resolution + protocol params + model registry + HF mirror (single source of truth)
+├── data/loaders.py           real MIT / NASA / CALCE loaders (CALCE uses a provenance-fingerprinted parquet cache)
+├── data/protocol.py          cleaning / SOH normalisation / relative-start split / smoothed reference
+├── adapters/base.py          Forecaster interface + batched rolling recursion + quantile interface + crossing repair
+├── adapters/                 chronos / timesfm / lagllama / moirai (independent seed advancement each)
+├── adapters/calibrated.py    2-parameter monotone calibration head (frozen backbone, p' = c + s(p-c) + b)
+├── baselines/classic.py      naive_last / naive_linear / exp_decay / ARIMA
+├── evaluation/metrics.py     MAE / RMSE(SOH) + EOL error + RUL error + hit rate
+│                             + CRPS / PICP / MPIW + the three redesigned EOL quantities
+├── tests/                    dependency-free regression suites (cache fingerprint / online proxy / pseudo-task split, 214 items)
+├── run_benchmark.py          one command per cell (--models / --max-context / --start-fracs / --seed)
+├── calibrate_head.py         fit the calibration head (s, b) (two-stage grid, zero gradients)
+├── report.py                 summary.json → 结果表.md + 汇总表.csv
+├── stats_significance.py     bootstrap CI + paired Wilcoxon → 显著性检验.md
+├── analyze_shrinkage.py      pred_ratio / mismatch / rank correlation → 衰减保留率.csv + fig5
+├── analyze_eol2.py           redesigned EOL summary → 汇总_EOL重设计.csv + EOL重设计.md
+├── analyze_calibration.py    zero-shot / 2-parameter / fine-tuned three-way comparison → 校准头对比.md
+├── calibrate_width.py        interval width intervention (scale half-width around median, no model rerun) → 区间宽度校准.md
+├── online_proxy.py           online proxies: 9 context features → knee / model choice / width (zero inference)
+├── diag_context_range.py     context-length feasibility: length distribution + effect of clamping to 512 (zero inference)
+├── conformal_w.py            in-context self-testing (conformal pseudo-task) → 上下文自测.md
+├── analyze_seeds.py          multi-seed variance and ranking-flip checks → 种子方差.md
+├── diag_curvature.py         knee_ratio (data-side fade acceleration ratio)
+├── ablate_naive_linear.py    naive_linear fitting-window ablation (⌊n/2⌋ vs full segment)
+├── fewshot_finetune.py       real-gradient fine-tuning of Chronos-Bolt (k cells) + cross-dataset transfer
+├── plot_fewshot.py           fig6: MAE / EOL vs ACTUAL support-set size
+├── figures.py                trajectory plots / box plots / EOL hit rate / start-point sensitivity
+└── one-off diagnostics (not in the report chain)
+    ├── backfill_ctx.py       backfill `key|ctx` into historical predictions_*.npz (no inference rerun)
+    ├── diag_calce_files.py   per-zip check: "is this a capacity aging test"
+    ├── diag_calce_depth.py   cycles at true full depth by Vmax/Vmin (the basis for 27 → 14)
+    └── diag_calce_cells.py   full-depth by discharge/rated capacity (second independent basis)
+02_数据集链接/                 provenance, fields and access for the three datasets (paths only, no data)
+03_实验结果/                   per-cell / summary / predictions per run + aggregates and tests
+  ├── prob/                   probabilistic metric matrix (CRPS/PICP/MPIW + EOL redesign), not in main tables
+  ├── calib/                  calibration-head params and grid surface
+  ├── width_calib/            interval width sweep + per-combination curves + cross-dataset transfer
+  ├── online_proxy/           per-cell context features / per-cell w_cov / Spearman tables / routing / LOOCV
+  └── conformal_w/            in-context self-testing (horizon invariance + per-cell w_hat / w_oracle / three PICP variants)
+04_文档报告/                   short paper draft, plan, execution log, result tables, figures, _history
 scripts/                      setup_env.{sh,bat} + run_matrix.sh + run_prob.sh + run_cal.sh
-                             + check_docs.py（文档链接与锚点）+ check_figures.py（图一致性）
-.github/workflows/repro.yml    CI：干净克隆上跑测试 + 汇总链，断言图与产物未被改动
-requirements-core.txt         核心依赖（基线所需）
-requirements-models.txt       模型依赖（已实测可共存的版本组合 + 踩坑记录）
+                              + check_docs.py (doc links and anchors) + check_figures.py (figure consistency)
+.github/workflows/repro.yml   CI: tests + summary chain on a clean clone, asserts figures and artifacts unchanged
+requirements-core.txt         core dependencies (baselines)
+requirements-models.txt       model dependencies (tested-coexistent version sets + pitfall notes)
 ```
 
 ---
 
-## 复现性
+## Reproducibility
 
-所有提交的数字与图都由管道产出，没有手工改数：
+Every committed number and figure is produced by the pipeline — nothing is hand-edited:
 
 ```bash
-bash scripts/run_matrix.sh report    # 22 步：汇总 + 显著性 + 机制 + 种子方差 + 消融 + 出图
+bash scripts/run_matrix.sh report    # 22 steps: summaries + significance + mechanism + seeds + ablation + figures
 ```
 
-- **CI 每次 push 都在干净克隆上重跑**（[`.github/workflows/repro.yml`](.github/workflows/repro.yml)）：
-  214 项回归测试 + 22 步汇总链 + 13 个文档的链接与锚点检查，然后断言图与已提交版本一致、
-  文本产物零改动。徽章见页面顶部。
-- **没有原始数据也能跑 report**：4 个需要数据集的步骤会打印 `[跳过]` 并退出 0，
-  不会用空结果覆盖已提交产物；有数据时它们照常运行。
-- **图的一致性分两个口径**：同平台要求字节级一致（`python scripts/check_figures.py`），
-  跨平台只要求像素级一致（`--pixels`）——FreeType / zlib 差异会让 PNG 字节必然不同，
-  这一点由 CI 首次运行实测确认。
-- 复现过程中修掉的 20 个坑（每一个都会让数字悄悄错掉、而且不报错）完整记在
-  [`04_文档报告/执行记录-2026-10-20.md`](04_文档报告/执行记录-2026-10-20.md)，此处不展开。
+- **CI reruns on a clean clone on every push** ([`.github/workflows/repro.yml`](.github/workflows/repro.yml)): 214 regression tests + a 22-step summary chain + link and anchor checks across 13 documents, then asserts figures match the committed versions and text artifacts are unchanged byte-for-byte.
+- **`report` runs without raw data**: the 4 data-dependent steps print `[skipped]` and exit 0, never overwriting committed artifacts; with data present they run normally.
+- **Figure consistency has two modes**: byte-identical on the same platform (`python scripts/check_figures.py`), pixel-identical across platforms (`--pixels`) — FreeType / zlib differences make byte-identical PNGs impossible, confirmed empirically on the first CI run.
+- The 20 pitfalls fixed during reproduction — each of which silently corrupts a number without raising — are documented in [`04_文档报告/执行记录-2026-10-20.md`](04_文档报告/执行记录-2026-10-20.md).
 
 ---
 
-## 局限
+## Limitations
 
-1. **EOL 指标太脆**：MIT 在 EOL 处截断（数据没有"跌破 80% 之后"的样本），零样本模型"差一点"就到不了，
-   命中率恒为 0%；NASA 闸门后只剩 3 支，CALCE 剩 8 支，**都不足以做显著性检验**。
-   已补三个替代量（RUL 相对误差 / 带符号过冲 / 未穿越裕度，见上文"概率口径"一节），
-   把常数 0 换成了可排序的数；但样本量本身仍不足，EOL 只作辅助指标。
-2. **Lag-Llama 的上下文被 32 卡住，而且它是五个模型里规模最小的（实测权重 2.4 M 参数，仅为 Chronos-T5-small 的 1/19）**：
-   原生上下文与其他模型的 512 不可比，容量差距也极大。
-   已单独标注；但它在 MIT 上仍是最差（7.05），说明"提前 197 循环跌破 80%"不能只归因于上下文长度或参数规模。
-3. **只有 LFP 与 LCO 两个体系**：没有 NCM/NCA、没有快充工况、没有温度维度。
-4. **few-shot 只做了 Chronos-Bolt**：其余四个模型的微调接口差异大，未覆盖。
-5. **全部在 CPU 上跑**：单次全矩阵约 10 小时，因此只做了 3 个额外种子（不是 10 个）。
-6. **`knee_ratio` 是事后量**：它需要真值才能算，只能用于**解释**已发生的结果，
-   不能作为部署时的先验判据。已补在线代理（见上文"在线代理"一节）：拐点能用
-   上下文的 `drop_ctx` 估出来（ρ = −0.96），但模型选择与逐 cell 区间宽度都估不出来。
-7. **校准头的 `s` 不能跨库迁移**：在 MIT 上拟合的 `s = 1.65` 搬到 CALCE 是负迁移（+1.2%）。
-   `s` 学的是"这个数据分布该放大多少"，不是模型属性，必须在目标分布上重新拟合。
-   区间宽度倍数 `w` 同样不可迁移，而用上下文回归只能把覆盖率误差从 42pp 压到 19pp；
-   conformal 式的上下文内自测更差（可部署口径 38pp），加事后修正因子也赢不过一个常数基线
-   （见局限第 11 条）。
-8. **概率口径仍远未校准**：即使经过校准头，PICP 也只有 25%（MIT）/ 41%（NASA）/ 17%（CALCE），
-   离名义 80% 还很远。本基准只能指出"过度自信"这个方向，没有解决它。
-9. **"长上下文"这个因子在本数据上不可测**：183 个「cell×起点」组合里没有一个的上下文
-   超过 2048（最长 1340），所以 512/1024/2048 的三档对照退化成「512 vs 原生」。
-   要研究上下文长度的影响，需要单支电池有 4000 个以上循环的数据集
-   （见 [`04_文档报告/上下文范围.md`](04_文档报告/上下文范围.md)）。
-10. **逐 cell 选模型没有空间**：6 个候选的逐 cell 完美选优相对最优单模型只改善
-    1.7%（MIT）/ 0%（NASA）/ 20%（CALCE），且留一库学不到可迁移的规则。
-    集成/路由类方法的收益上限就在这里。
-11. **在线估区间宽度 `w` 在本协议下做不到**：特征回归只能到 19pp（留一库），
-    conformal 上下文自测可部署口径反而更差（38pp），加事后修正因子仍输给一个常数基线。
-    根因是 50/50 切分让「匹配 horizon 的自测」在数学上不存在，而 `w` 对 horizon 极度敏感
-    （horizon 减半 ⇒ `w` 只剩 11.7%）。要解决只能改协议（更晚的起点），
-    那会改变所有已发表数字的口径（见 [`04_文档报告/上下文自测.md`](04_文档报告/上下文自测.md)）。
+1. **The EOL metric is fragile**: MIT is truncated at EOL (no samples beyond crossing 80%), so zero-shot models that "just miss" score a constant 0%; NASA has 3 cells after gating and CALCE 8 — **neither supports significance testing**. Three replacement quantities (RUL relative error / signed overshoot / margin to crossing) turn the constant 0 into orderable numbers, but the sample size itself remains insufficient; EOL stays an auxiliary metric.
+2. **Lag-Llama is capped at 32 context and is also the smallest model** (2.4 M measured weights, 1/19 of Chronos-T5-small): its native context is not comparable to the other models' 512, and the capacity gap is large. It is flagged separately, but it is still the worst on MIT (7.05), which means "crossing 80% 197 cycles early" cannot be attributed to context length or parameter count alone.
+3. **Only two chemistries (LFP and LCO)**: no NCM/NCA, no fast-charging profiles, no temperature dimension.
+4. **Few-shot fine-tuning covers Chronos-Bolt only**: the other four models' fine-tuning interfaces differ substantially and are not covered.
+5. **Everything runs on CPU**: the full matrix takes about 10 hours, hence only 3 extra seeds (not 10).
+6. **`knee_ratio` is a post-hoc quantity**: it needs ground truth, so it can only *explain* observed results, not serve as a deployment prior. Online proxies partially fill this gap — the knee is estimable from `drop_ctx` (ρ = −0.96), but model selection and per-cell interval width are not.
+7. **The calibration head's `s` does not transfer across datasets**: MIT's `s = 1.65` is negative transfer on CALCE (+1.2%). `s` learns "how much to amplify this data distribution", not a model property, and must be refitted on the target distribution. The interval width multiplier `w` is likewise non-transferable, and context regression only reduces coverage error from 42pp to 19pp; conformal in-context self-testing is worse still (38pp deployable).
+8. **The probabilistic path is far from calibrated**: even with the calibration head, PICP is only 25% (MIT) / 41% (NASA) / 17% (CALCE), nowhere near the nominal 80%. This benchmark can only point at the "overconfident" direction; it does not solve it.
+9. **"Long context" is not measurable on this data**: none of the 183 cell × start combinations exceeds 2048 context (longest 1340), so the 512/1024/2048 comparison degenerates to "512 vs native". Studying context length requires a dataset with 4000+ cycles per cell (see [`04_文档报告/上下文范围.md`](04_文档报告/上下文范围.md)).
+10. **Per-cell model selection has no headroom**: perfect selection among 6 candidates improves on the best single model by only 1.7% (MIT) / 0% (NASA) / 20% (CALCE), and leave-one-dataset-out learns no transferable rule. This is the ceiling for ensembling and routing approaches.
+11. **Online estimation of interval width `w` is infeasible under this protocol**: feature regression reaches 19pp (LOOCV), conformal in-context self-testing is worse at 38pp deployable, and a post-hoc correction factor still loses to a constant baseline. The root cause is that the 50/50 split makes "a self-test matched to the horizon" mathematically non-existent, while `w` is extremely horizon-sensitive (halving the horizon leaves only 11.7% of `w`). Fixing it requires changing the protocol (a later start), which would change the definition of every published number (see [`04_文档报告/上下文自测.md`](04_文档报告/上下文自测.md)).
 
 ---
 
-## 引用与许可
+## Citation and license
 
-代码 MIT，见 [`LICENSE`](LICENSE)。**数据与权重不随仓库分发**，分发范围与获取方式见 [`NOTICE.md`](NOTICE.md)。
+Code is MIT, see [`LICENSE`](LICENSE). **Data and model weights are not distributed with this repository** — see [`NOTICE.md`](NOTICE.md) for distribution scope and access.
 
-如果这个基准对你有帮助：
+If this benchmark is useful to you:
 
 ```bibtex
 @software{zhicheng_tsfm_battery_2026,
@@ -659,8 +574,8 @@ bash scripts/run_matrix.sh report    # 22 步：汇总 + 显著性 + 机制 + �
 }
 ```
 
-也可直接使用 [`CITATION.cff`](CITATION.cff)（GitHub 会显示 "Cite this repository"）。
+[`CITATION.cff`](CITATION.cff) is also available (GitHub will show "Cite this repository").
 
 ---
 
-*最后更新：2026-10-22 ｜ 短文初稿见 [`04_文档报告/短文初稿-v1.md`](04_文档报告/短文初稿-v1.md) ｜ 完整过程记录见 [`04_文档报告/执行记录-2026-10-20.md`](04_文档报告/执行记录-2026-10-20.md)*
+*Last updated: 2026-10-22 · Short paper draft: [`04_文档报告/短文初稿-v1.md`](04_文档报告/短文初稿-v1.md) · Full execution log: [`04_文档报告/执行记录-2026-10-20.md`](04_文档报告/执行记录-2026-10-20.md)*
