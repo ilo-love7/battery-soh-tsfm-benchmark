@@ -81,6 +81,22 @@ Three things worth knowing before you scroll:
 
 ---
 
+## What you can do with this benchmark
+
+| Job | Entry point |
+|---|---|
+| **Re-run the full benchmark** (classical baselines + foundation models, 3 datasets) | `01_源代码/` runner scripts · see `Quick start` above |
+| **Verify a specific claim** — e.g. "does the knee explain the winner?" | `ablate_naive_linear.py`, `analyze_*` scripts in `01_源代码/` |
+| **Reuse the evaluation protocol** (SOH metrics, CRPS / PICP / MPIW, EOL redesign, significance + seed variance) | `01_源代码/evaluation/metrics.py`, `01_源代码/data/protocol.py` |
+| **Plug in your own model** (any forecaster behind the adapter interface) | `01_源代码/adapters/base.py` + `adapters/calibrated.py` |
+| **Reproduce the committed figures / check for report-chain rot** | `scripts/check_figures.py` (pixel-level comparison; CI runs this) |
+| **Read the conclusions you can and cannot draw** | `04_文档报告/` (full report), `03_实验结果/` (tables), `NOTICE.md` |
+
+Typical uses: (1) a **fair-comparison harness** before claiming a new SOH model wins;
+(2) a **protocol template** for probabilistic forecasting in battery health; (3) an **evidence base**
+for "when is a foundation model worth it" (answer: when the degradation curve has a knee and you can fine-tune).
+
+**No raw datasets are committed.** Data links are in `02_数据集链接/`; the regression tests run offline.
 ## Quick start
 
 ### 0. Environment
