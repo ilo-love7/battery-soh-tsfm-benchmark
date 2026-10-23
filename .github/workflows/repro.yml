@@ -31,11 +31,26 @@ jobs:
 
       # matplotlib 钉在 3.11.2：图的**内容**由它决定，版本漂移会让像素也变。
       # pillow 只用于图比对时解码 PNG，不参与出图。
+      #
+      # 数值栈同样必须钉死：文本产物（.csv/.md/.json）的**浮点末位**由
+      # pandas / numpy / scipy / scikit-learn 的求和与中位数实现决定。
+      # 2026-10-22 实测：唯一变化是 pip 把未钉版本的 `pandas>=2.0` 解析成了 3.1.0
+      # （run 11 用 3.0.6 全绿；run 12 / 13 用 3.1.0 连续红），它让
+      # 03_实验结果/显著性检验.csv、汇总_EOL重设计.csv、汇总_校准头.csv 共 51 个
+      # 字段出现 ≤2.3e-15（≈10 ULP）的末位漂移——相对差、排序、显著性星号、
+      # 计数字段与 p 值全部不变，只是最后 1–2 位有效数字不同；
+      # 但下面那条"文本产物一个字节不变"的守卫是逐字节的，于是判红。
+      # 钉到 run 11 实测能复现已提交产物的版本；守卫口径保持逐字节，不放宽。
       - name: 安装依赖
         run: |
           python -m pip install -q --upgrade pip
-          python -m pip install -q "matplotlib==3.11.2" pillow
+          python -m pip install -q "matplotlib==3.11.2" pillow \
+            "numpy==2.5.4" "pandas==3.0.6" "scipy==1.18.1" "scikit-learn==1.9.1"
           python -m pip install -q -r requirements-core.txt
+          # requirements-core.txt 用下界约束（pandas>=2.0,<3.1），上面装好的精确版本
+          # 会被判为已满足，不会被升级；这里再断言一次，将来若有依赖把版本抬上去
+          # 就直接在这一步炸掉，而不是让下游守卫报一个难懂的浮点 diff。
+          python -c "import numpy as np, pandas as pd; assert np.__version__ == '2.5.4', np.__version__; assert pd.__version__ == '3.0.6', pd.__version__; print('numerical stack pinned')"
           python -c "import matplotlib,numpy,pandas,scipy,sklearn,PIL;print(
             'matplotlib',matplotlib.__version__,'| numpy',numpy.__version__,
             '| pandas',pandas.__version__,'| scipy',scipy.__version__,
